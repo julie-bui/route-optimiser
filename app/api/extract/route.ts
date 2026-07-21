@@ -14,17 +14,17 @@ const schema = {
   required: ["address", "agentName", "agentEmail", "agentPhone"],
 };
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-flash-latest",
-  generationConfig: {
-    responseMimeType: "application/json",
-    responseSchema: schema,
-  },
-});
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.1-flash-lite",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+      },
+    });
 
 const BATCH_SIZE = 2;
 const DELAY_BETWEEN_BATCHES_MS = 8000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,7 +42,9 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
       },
     ]);
 
-    const parsed = JSON.parse(result.response.text());
+    const rawText = result.response.text();
+    console.log(`Raw Gemini response for ${file.name}:`, rawText);
+    const parsed = JSON.parse(rawText);
 
     return {
       sourcePdfName: file.name,
@@ -54,9 +56,16 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
       error: null,
     };
   } catch (err: any) {
-    const is429 = err?.status === 429 || err?.message?.includes("429");
+    console.error(`Extraction error for ${file.name}:`, err);
+    const isRetryable =
+      err?.status === 429 ||
+      err?.status === 503 ||
+      err?.message?.includes("429") ||
+      err?.message?.includes("503") ||
+      err?.message?.includes("overloaded") ||
+      err?.message?.includes("high demand");
 
-    if (is429 && attempt <= MAX_RETRIES) {
+    if (isRetryable && attempt <= MAX_RETRIES) {
       const backoff = 10000 * attempt;
       await sleep(backoff);
       return extractOne(file, attempt + 1);
@@ -69,8 +78,8 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
       agentEmail: null,
       agentPhone: null,
       needsReview: true,
-      error: is429
-        ? "Rate limit hit repeatedly — try again in a minute, or enter manually."
+      error: isRetryable
+        ? "Gemini's servers are temporarily overloaded or rate-limited — try again in a minute, or enter manually."
         : "Extraction failed — enter details manually.",
     };
   }
