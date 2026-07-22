@@ -157,7 +157,20 @@ export async function getJourney(
   }
 
   const mode = modeParamFor(travelMode);
-  const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
+
+  let dateTimeParams = "";
+  if (departAt) {
+    const d = new Date(departAt);
+    const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+    const time = `${String(d.getHours()).padStart(2, "0")}${String(
+      d.getMinutes()
+    ).padStart(2, "0")}`;
+    dateTimeParams = `&date=${date}&time=${time}&timeIs=Departing`;
+  }
+
+  const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}${dateTimeParams}&app_key=${process.env.TFL_API_KEY}`;
   const res = await fetch(url);
 
   if (!res.ok) {

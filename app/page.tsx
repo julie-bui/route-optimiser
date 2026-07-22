@@ -42,6 +42,9 @@ export default function Home() {
   } | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResults, setEmailResults] = useState<any[] | null>(null);
+  const [ccEmail, setCcEmail] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(files: FileList) {
@@ -54,6 +57,10 @@ export default function Home() {
 
   function removePendingFile(name: string) {
     setPendingFiles((prev) => prev.filter((f) => f.name !== name));
+  }
+
+  function removeProperty(index: number) {
+    setProperties((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleExtract() {
@@ -220,6 +227,34 @@ export default function Home() {
     }
   }
 
+  async function handleApproveRoute() {
+    if (!routeResult) return;
+
+    setEmailSending(true);
+    setEmailResults(null);
+
+    try {
+      const res = await fetch("/api/send-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stops: routeResult.stops,
+          tourDate,
+          ccEmail: ccEmail || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      setEmailResults(data.results);
+    } catch (err: any) {
+      setEmailResults([
+        { address: "N/A", status: "failed", reason: err.message },
+      ]);
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
   const allResolved = properties.length > 0 && properties.every((p) => !p.needsReview);
   const canConfirmRoute =
     startPropertyIndex !== null && tourDate !== "" && startTime !== "";
@@ -311,6 +346,7 @@ export default function Home() {
                   <th className="p-2">Agent</th>
                   <th className="p-2">Email</th>
                   <th className="p-2">Phone</th>
+                  <th className="p-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -360,6 +396,20 @@ export default function Home() {
                         onChange={(e) => updateField(i, "agentPhone", e.target.value)}
                         className="border rounded px-2 py-1 w-full"
                       />
+                    </td>
+                    <td className="p-2">
+                      <button
+                        onClick={() => removeProperty(i)}
+                        style={{
+                          color: "#d85a30",
+                          fontSize: 13,
+                          border: "none",
+                          background: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -418,6 +468,7 @@ export default function Home() {
                 type="date"
                 value={tourDate}
                 onChange={(e) => setTourDate(e.target.value)}
+              min={new Date().toISOString().split("T")[0]}
                 className="border rounded px-2 py-2 w-full"
               />
             </label>
@@ -675,6 +726,26 @@ export default function Home() {
               })()}
             </div>
 
+            <div style={{ marginBottom: 12 }}>
+              <label
+                style={{
+                  fontSize: 13,
+                  color: "#666",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
+                CC email (optional)
+              </label>
+              <input
+                type="email"
+                value={ccEmail}
+                onChange={(e) => setCcEmail(e.target.value)}
+                placeholder="your@email.com"
+                style={{ width: 240 }}
+              />
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={() => setStep("plan")}
@@ -690,14 +761,37 @@ export default function Home() {
                 Recalculate route
               </button>
               <button
-                onClick={() =>
-                  alert("Route approved! Email sending comes next.")
-                }
-                className="bg-black text-white px-4 py-2 rounded"
+                onClick={handleApproveRoute}
+                disabled={emailSending}
+                className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
               >
-                Approve route
+                {emailSending ? "Sending emails..." : "Approve route"}
               </button>
             </div>
+            {emailResults && (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontWeight: 500, marginBottom: 8 }}>Email status</p>
+                {emailResults.map((r: any, idx: number) => (
+                  <div key={idx} style={{ fontSize: 13, marginBottom: 4 }}>
+                    <span
+                      style={{
+                        color:
+                          r.status === "sent"
+                            ? "#0f6e56"
+                            : r.status === "skipped"
+                              ? "#854f0b"
+                              : "#a32d2d",
+                      }}
+                    >
+                      {r.status.toUpperCase()}
+                    </span>
+                    {" - "}
+                    {r.address}
+                    {r.reason ? ` (${r.reason})` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )
       )}
