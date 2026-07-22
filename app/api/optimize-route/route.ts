@@ -6,25 +6,47 @@ type PropertyPoint = {
   lng: number;
 };
 
-async function getTravelTimeMatrix(points: PropertyPoint[]): Promise<number[][]> {
-  const coordinates = points.map((p) => `${p.lng},${p.lat}`).join(";");
-
-  const url = `https://us1.locationiq.com/v1/matrix/driving/${coordinates}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&annotations=duration`;
+async function getJourneyDurationSeconds(from: PropertyPoint, to: PropertyPoint): Promise<number> {
+  const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?app_key=${process.env.TFL_API_KEY}`;
 
   const res = await fetch(url);
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`LocationIQ matrix request failed: ${res.status} ${errText}`);
+    throw new Error(`TfL journey request failed (${from.address} -> ${to.address}): ${res.status} ${errText}`);
   }
 
   const data = await res.json();
 
-  if (!data.durations) {
-    throw new Error(`LocationIQ matrix response missing durations: ${JSON.stringify(data)}`);
+  console.log(`TfL raw response for ${from.address} -> ${to.address}:`, JSON.stringify(data.journeys?.map((j: any) => ({ duration: j.duration, legs: j.legs?.map((l: any) => l.mode?.name) })), null, 2));
+
+  if (!data.journeys || data.journeys.length === 0) {
+    throw new Error(`No TfL journey found between "${from.address}" and "${to.address}"`);
   }
 
-  return data.durations; // seconds, [i][j] = travel time from i to j
+  // TfL returns duration in minutes; take the fastest journey option
+  const fastest = data.journeys.reduce((min: any, j: any) =>
+    j.duration < min.duration ? j : min
+  );
+
+  return fastest.duration * 60; // convert minutes to seconds
+}
+
+async function getTravelTimeMatrix(points: PropertyPoint[]): Promise<number[][]> {
+  const n = points.length;
+  const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+
+  // TfL has no batch/matrix endpoint, so call pairwise.
+  // At this app's scale (a handful of properties per tour) this is fine.
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i !== j) {
+        matrix[i][j] = await getJourneyDurationSeconds(points[i], points[j]);
+      }
+    }
+  }
+
+  return matrix;
 }
 
 function solveRoute(matrix: number[][], startIndex: number): number[] {
@@ -91,6 +113,17 @@ export async function POST(req: NextRequest) {
 
   try {
     const matrix = await getTravelTimeMatrix(points);
+
+    for (let i = 0; i < matrix.length; i++) {
+      for (let j = 0; j < matrix.length; j++) {
+        if (i !== j && (matrix[i][j] === undefined || matrix[i][j] === null || !isFinite(matrix[i][j]))) {
+          throw new Error(
+            `No route found between "${properties[i].address}" and "${properties[j].address}"`
+          );
+        }
+      }
+    }
+
     const order = solveRoute(matrix, startIndex);
 
     const stops = order.map((idx, i) => {

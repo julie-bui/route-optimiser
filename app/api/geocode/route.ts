@@ -5,13 +5,19 @@ export async function POST(req: NextRequest) {
 
   const results = await Promise.all(
     addresses.map(async (address: string) => {
+      const searchAddress = address.toLowerCase().includes("uk") || address.toLowerCase().includes("united kingdom")
+        ? address
+        : `${address}, UK`;
+
       const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(
-        address
-      )}&key=${process.env.OPENCAGE_API_KEY}&limit=1&no_annotations=1`;
+        searchAddress
+      )}&key=${process.env.OPENCAGE_API_KEY}&limit=1&no_annotations=1&countrycode=gb`;
 
       try {
         const res = await fetch(url);
         const data = await res.json();
+
+        console.log(`OpenCage response for "${address}":`, JSON.stringify(data.status), data.results?.[0]?.geometry);
 
         if (data.status.code !== 200 || !data.results[0]) {
           return {

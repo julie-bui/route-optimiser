@@ -10,23 +10,25 @@ type Property = {
   needsReview: boolean;
 };
 
-type GeocodeResult = {
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  error: string | null;
-};
+function formatArrivalTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export default function Home() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(false);
+  const [geocodeLoading, setGeocodeLoading] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [step, setStep] = useState<"extract" | "plan">("extract");
+  const [step, setStep] = useState<"extract" | "plan" | "route">("extract");
   const [geocodedProperties, setGeocodedProperties] = useState<any[]>([]);
   const [startPropertyIndex, setStartPropertyIndex] = useState<number | null>(null);
   const [tourDate, setTourDate] = useState("");
   const [startTime, setStartTime] = useState("");
+  const [routeResult, setRouteResult] = useState<any>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(files: FileList) {
@@ -75,51 +77,91 @@ export default function Home() {
   }
 
   async function handleContinue() {
-    setLoading(true);
+    setGeocodeLoading(true);
+    setGeocodeError(null);
+
     try {
-      const addresses = properties.map((p) => p.address as string);
       const res = await fetch("/api/geocode", {
         method: "POST",
-        body: JSON.stringify({ addresses }),
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: properties.map((p) => p.address) }),
       });
+
+      if (!res.ok) {
+        throw new Error(`Geocoding request failed: ${res.status}`);
+      }
+
       const data = await res.json();
-      const results: GeocodeResult[] = data.results;
+
+      // Build a lookup from address -> {lat, lng} so merging is explicit and unambiguous
+      const geocodeLookup = new Map(
+        data.results.map((r: any) => [r.address, { lat: r.lat, lng: r.lng, error: r.error }])
+      );
 
       const merged = properties.map((p) => {
-        const geo = results.find((r) => r.address === p.address);
+        const match = geocodeLookup.get(p.address);
         return {
           ...p,
-          lat: geo?.lat ?? null,
-          lng: geo?.lng ?? null,
-          geocodeError: geo?.error ?? null,
+          lat: match?.lat ?? null,
+          lng: match?.lng ?? null,
+          geocodeError: match?.error ?? null,
         };
       });
 
+      console.log("Merged geocoded properties:", merged);
+
       setGeocodedProperties(merged);
       setStep("plan");
+    } catch (err: any) {
+      setGeocodeError(err.message || "Geocoding failed");
     } finally {
-      setLoading(false);
+      setGeocodeLoading(false);
     }
   }
 
-  function handleConfirmRoute() {
+  async function handleConfirmRoute() {
     if (startPropertyIndex === null) return;
-    const plan = {
-      startProperty: geocodedProperties[startPropertyIndex],
-      tourDate,
-      startTime,
-      properties: geocodedProperties,
-    };
-    console.log("Tour plan:", plan);
-    alert(
-      `Route confirmed starting at ${geocodedProperties[startPropertyIndex].address} on ${tourDate} at ${startTime}. Optimization comes next.`
-    );
+    setRouteLoading(true);
+    setRouteError(null);
+    try {
+      const res = await fetch("/api/optimize-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          properties: geocodedProperties,
+          startIndex: startPropertyIndex,
+          viewingMinutesDefault: 15,
+          tourDate,
+          startTime,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRouteError(data.error || `Route optimization failed (${res.status})`);
+        return;
+      }
+      setRouteResult(data);
+      setStep("route");
+    } catch (err: any) {
+      setRouteError(err?.message || "Failed to optimize route. Please try again.");
+    } finally {
+      setRouteLoading(false);
+    }
   }
 
   const allResolved = properties.length > 0 && properties.every((p) => !p.needsReview);
   const canConfirmRoute =
     startPropertyIndex !== null && tourDate !== "" && startTime !== "";
+
+  function buildArrivalTimes(stops: any[]): Date[] {
+    const cursor = new Date(`${tourDate}T${startTime}`);
+    return stops.map((stop) => {
+      cursor.setSeconds(cursor.getSeconds() + (stop.travelSecondsFromPrevious ?? 0));
+      const arrival = new Date(cursor);
+      cursor.setMinutes(cursor.getMinutes() + (stop.viewingMinutes ?? 0));
+      return arrival;
+    });
+  }
 
   return (
     <main className="p-8 max-w-4xl mx-auto">
@@ -245,76 +287,150 @@ export default function Home() {
             </table>
           )}
 
+          {geocodeError && (
+            <p className="mb-4 text-sm text-red-600">{geocodeError}</p>
+          )}
+
           <button
             onClick={handleContinue}
-            disabled={!allResolved || loading}
+            disabled={!allResolved || geocodeLoading}
             className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
           >
-            {loading ? "Geocoding..." : "Continue"}
+            {geocodeLoading ? "Geocoding..." : "Continue"}
           </button>
         </>
       )}
 
       {step === "plan" && (
-        <div className="max-w-md">
-          <h1 className="text-2xl font-medium mb-6">Plan your tour</h1>
+        routeLoading ? (
+          <p className="text-sm text-gray-500">Optimizing your route…</p>
+        ) : (
+          <div className="max-w-md">
+            <h1 className="text-2xl font-medium mb-6">Plan your tour</h1>
 
-          <label className="block mb-4">
-            <span className="block text-sm font-medium mb-1">Starting property</span>
-            <select
-              value={startPropertyIndex ?? ""}
-              onChange={(e) =>
-                setStartPropertyIndex(
-                  e.target.value === "" ? null : Number(e.target.value)
-                )
-              }
-              className="border rounded px-2 py-2 w-full"
-            >
-              <option value="">Select a starting address</option>
-              {geocodedProperties.map((p, i) => (
-                <option key={i} value={i}>
-                  {p.address}
-                </option>
-              ))}
-            </select>
-          </label>
+            {routeError && (
+              <p className="mb-4 text-sm text-red-600">{routeError}</p>
+            )}
 
-          <label className="block mb-4">
-            <span className="block text-sm font-medium mb-1">Tour date</span>
-            <input
-              type="date"
-              value={tourDate}
-              onChange={(e) => setTourDate(e.target.value)}
-              className="border rounded px-2 py-2 w-full"
-            />
-          </label>
+            <label className="block mb-4">
+              <span className="block text-sm font-medium mb-1">Starting property</span>
+              <select
+                value={startPropertyIndex ?? ""}
+                onChange={(e) =>
+                  setStartPropertyIndex(
+                    e.target.value === "" ? null : Number(e.target.value)
+                  )
+                }
+                className="border rounded px-2 py-2 w-full"
+              >
+                <option value="">Select a starting address</option>
+                {geocodedProperties.map((p, i) => (
+                  <option key={i} value={i}>
+                    {p.address}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="block mb-6">
-            <span className="block text-sm font-medium mb-1">Start time</span>
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              className="border rounded px-2 py-2 w-full"
-            />
-          </label>
+            <label className="block mb-4">
+              <span className="block text-sm font-medium mb-1">Tour date</span>
+              <input
+                type="date"
+                value={tourDate}
+                onChange={(e) => setTourDate(e.target.value)}
+                className="border rounded px-2 py-2 w-full"
+              />
+            </label>
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep("extract")}
-              className="border border-gray-300 px-4 py-2 rounded"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleConfirmRoute}
-              disabled={!canConfirmRoute}
-              className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
-            >
-              Confirm route
-            </button>
+            <label className="block mb-6">
+              <span className="block text-sm font-medium mb-1">Start time</span>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="border rounded px-2 py-2 w-full"
+              />
+            </label>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep("extract")}
+                className="border border-gray-300 px-4 py-2 rounded"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleConfirmRoute}
+                disabled={!canConfirmRoute}
+                className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
+              >
+                Confirm route
+              </button>
+            </div>
           </div>
-        </div>
+        )
+      )}
+
+      {step === "route" && routeResult && (
+        routeLoading ? (
+          <p className="text-sm text-gray-500">Optimizing your route…</p>
+        ) : (
+          <div className="max-w-md">
+            <h1 className="text-2xl font-medium mb-6">Your optimized route</h1>
+
+            <ol className="mb-6 space-y-4 list-decimal list-inside">
+              {(() => {
+                const arrivals = buildArrivalTimes(routeResult.stops);
+                return routeResult.stops.map((stop: any, i: number) => {
+                  const travelMinutes = Math.round(
+                    (stop.travelSecondsFromPrevious ?? 0) / 60
+                  );
+                  return (
+                    <li key={i} className="border-b border-gray-100 pb-3">
+                      <span className="font-medium">{stop.address}</span>
+                      <div className="ml-5 mt-1 text-sm text-gray-600 space-y-0.5">
+                        <p>Agent: {stop.agentName ?? "—"}</p>
+                        <p>
+                          Travel from previous:{" "}
+                          {i === 0 ? "—" : `${travelMinutes} min`}
+                        </p>
+                        <p>Viewing: {stop.viewingMinutes} min</p>
+                        <p>Arrive: {formatArrivalTime(arrivals[i])}</p>
+                      </div>
+                    </li>
+                  );
+                });
+              })()}
+            </ol>
+
+            <div className="mb-6 text-sm">
+              <p>
+                Total travel time:{" "}
+                {Math.round((routeResult.totalTravelSeconds ?? 0) / 60)} min
+              </p>
+              <p>
+                Total viewing time: {routeResult.totalViewingMinutes ?? 0} min
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep("plan")}
+                className="border border-gray-300 px-4 py-2 rounded"
+              >
+                Back
+              </button>
+              <button
+                onClick={() =>
+                  alert("Route approved! Email sending comes next.")
+                }
+                className="bg-black text-white px-4 py-2 rounded"
+              >
+                Approve route
+              </button>
+            </div>
+          </div>
+        )
       )}
     </main>
   );

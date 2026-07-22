@@ -1,6 +1,12 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
+function hasCompleteUKPostcode(address: string | null): boolean {
+  if (!address) return false;
+  const fullPostcodeRegex = /[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i;
+  return fullPostcodeRegex.test(address);
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 const schema = {
@@ -38,7 +44,7 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
     const result = await model.generateContent([
       { inlineData: { mimeType: "application/pdf", data: base64 } },
       {
-        text: "Extract the property address and the listing agent's contact details (name, email, phone) from this brochure. If a field genuinely isn't present, return null for it — do not guess or invent values.",
+        text: "Extract the property address and the listing agent's contact details (name, email, phone) from this brochure. The address MUST include the full UK postcode (e.g. EC4N 8AD, not just EC4) if it appears anywhere in the document - check headers, footers, small print, and contact sections carefully, as postcodes are often printed separately from the main address. If a complete postcode genuinely cannot be found anywhere in the document, return the address with whatever partial postcode is available, but prioritize finding the full one. If a field genuinely isn't present, return null for it - do not guess or invent values.",
       },
     ]);
 
@@ -52,7 +58,7 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
       agentName: parsed.agentName,
       agentEmail: parsed.agentEmail,
       agentPhone: parsed.agentPhone,
-      needsReview: !parsed.address || !parsed.agentEmail,
+      needsReview: !parsed.address || !parsed.agentEmail || !hasCompleteUKPostcode(parsed.address),
       error: null,
     };
   } catch (err: any) {
