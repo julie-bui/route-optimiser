@@ -1,4 +1,8 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  SchemaType,
+  type Schema,
+} from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 function hasCompleteUKPostcode(address: string | null): boolean {
@@ -9,15 +13,34 @@ function hasCompleteUKPostcode(address: string | null): boolean {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-const schema = {
+const schema: Schema = {
   type: SchemaType.OBJECT,
   properties: {
     address: { type: SchemaType.STRING, nullable: true },
-    agentName: { type: SchemaType.STRING, nullable: true },
-    agentEmail: { type: SchemaType.STRING, nullable: true },
-    agentPhone: { type: SchemaType.STRING, nullable: true },
+    agencies: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          agencyName: { type: SchemaType.STRING, nullable: true },
+          contacts: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                name: { type: SchemaType.STRING, nullable: true },
+                email: { type: SchemaType.STRING, nullable: true },
+                phone: { type: SchemaType.STRING, nullable: true },
+              },
+              required: ["name", "email", "phone"],
+            },
+          },
+        },
+        required: ["agencyName", "contacts"],
+      },
+    },
   },
-  required: ["address", "agentName", "agentEmail", "agentPhone"],
+  required: ["address", "agencies"],
 };
 
     const model = genAI.getGenerativeModel({
@@ -45,7 +68,7 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
     const result = await model.generateContent([
       { inlineData: { mimeType: "application/pdf", data: base64 } },
       {
-        text: "Extract the property address and the listing agent's contact details (name, email, phone) from this brochure. The address MUST include the full UK postcode (e.g. EC4N 8AD, not just EC4) if it appears anywhere in the document - check headers, footers, small print, and contact sections carefully, as postcodes are often printed separately from the main address. If a complete postcode genuinely cannot be found anywhere in the document, return the address with whatever partial postcode is available, but prioritize finding the full one. If a field genuinely isn't present, return null for it - do not guess or invent values.",
+        text: "Extract the property address and details of every agency marketing this property, including joint/co-agency listings where two or more separate companies are involved. For each agency, extract its name and every individual contact person listed for that agency (name, email, phone). The address MUST include the full UK postcode (e.g. EC4N 8AD, not just EC4) if it appears anywhere in the document - check headers, footers, small print, and contact sections carefully. If a complete postcode genuinely cannot be found, return whatever partial postcode is available. If a field genuinely isn't present, return null for it - do not guess or invent values.",
       },
     ]);
 
@@ -53,13 +76,18 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
     console.log(`Raw Gemini response for ${file.name}:`, rawText);
     const parsed = JSON.parse(rawText);
 
+    const hasAnyValidEmail = (parsed.agencies || []).some((agency: any) =>
+      (agency.contacts || []).some((contact: any) => contact.email)
+    );
+
     return {
       sourcePdfName: file.name,
       address: parsed.address,
-      agentName: parsed.agentName,
-      agentEmail: parsed.agentEmail,
-      agentPhone: parsed.agentPhone,
-      needsReview: !parsed.address || !parsed.agentEmail || !hasCompleteUKPostcode(parsed.address),
+      agencies: parsed.agencies || [],
+      needsReview:
+        !parsed.address ||
+        !hasAnyValidEmail ||
+        !hasCompleteUKPostcode(parsed.address),
       error: null,
     };
   } catch (err: any) {
@@ -81,9 +109,7 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
     return {
       sourcePdfName: file.name,
       address: null,
-      agentName: null,
-      agentEmail: null,
-      agentPhone: null,
+      agencies: [],
       needsReview: true,
       error: isRetryable
         ? "Gemini's servers are temporarily overloaded or rate-limited — try again in a minute, or enter manually."

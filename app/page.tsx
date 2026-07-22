@@ -2,12 +2,23 @@
 import { useState, useRef } from "react";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
 
+type Contact = {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+type Agency = {
+  agencyName: string | null;
+  contacts: Contact[];
+};
+
 type Property = {
   sourcePdfName: string;
   address: string | null;
-  agentName: string | null;
-  agentEmail: string | null;
-  agentPhone: string | null;
+  agencies: Agency[];
+  selectedEmails: { [agencyIndex: number]: string };
+  customEmailMode: { [agencyIndex: number]: boolean };
   needsReview: boolean;
 };
 
@@ -21,6 +32,17 @@ function isValidEmail(email: string): boolean {
   if (!email) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email.trim());
+}
+
+function needsPropertyReview(property: Property): boolean {
+  return (
+    !property.address ||
+    !hasCompleteUKPostcodeClient(property.address) ||
+    property.agencies.length === 0 ||
+    !property.agencies.every((_, agencyIndex) =>
+      isValidEmail(property.selectedEmails?.[agencyIndex] || "")
+    )
+  );
 }
 
 function formatArrivalTime(date: Date): string {
@@ -96,20 +118,86 @@ export default function Home() {
     const res = await fetch("/api/extract", { method: "POST", body: formData });
     const data = await res.json();
 
-    // Merge into existing results rather than overwrite
-    setProperties((prev) => [...prev, ...data.results]);
+    const initialized = data.results.map((property: any) => {
+      const initializedProperty: Property = {
+        ...property,
+        agencies: property.agencies || [],
+        selectedEmails: Object.fromEntries(
+          (property.agencies || []).map((agency: any, index: number) => [
+            index,
+            agency.contacts?.[0]?.email || "",
+          ])
+        ),
+        customEmailMode: Object.fromEntries(
+          (property.agencies || []).map((_: any, index: number) => [index, false])
+        ),
+        needsReview: true,
+      };
+
+      return {
+        ...initializedProperty,
+        needsReview: needsPropertyReview(initializedProperty),
+      };
+    });
+
+    setProperties((prev) => [...prev, ...initialized]);
     setPendingFiles([]); // clear the staging area now that they're processed
     setLoading(false);
   }
 
-  function updateField(index: number, field: keyof Property, value: string) {
+  function updateField(index: number, field: "address", value: string) {
     setProperties((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
-      next[index].needsReview =
-        !next[index].address ||
-        !next[index].agentEmail ||
-        !hasCompleteUKPostcodeClient(next[index].address);
+      next[index].needsReview = needsPropertyReview(next[index]);
+      return next;
+    });
+  }
+
+  function handleAgencyEmailSelect(
+    propertyIndex: number,
+    agencyIndex: number,
+    value: string
+  ) {
+    setProperties((prev) => {
+      const next = [...prev];
+      const updated = {
+        ...next[propertyIndex],
+        customEmailMode: {
+          ...next[propertyIndex].customEmailMode,
+          [agencyIndex]: value === "__custom__",
+        },
+        selectedEmails: {
+          ...next[propertyIndex].selectedEmails,
+          [agencyIndex]: value === "__custom__" ? "" : value,
+        },
+      };
+      next[propertyIndex] = {
+        ...updated,
+        needsReview: needsPropertyReview(updated),
+      };
+      return next;
+    });
+  }
+
+  function handleCustomEmailChange(
+    propertyIndex: number,
+    agencyIndex: number,
+    value: string
+  ) {
+    setProperties((prev) => {
+      const next = [...prev];
+      const updated = {
+        ...next[propertyIndex],
+        selectedEmails: {
+          ...next[propertyIndex].selectedEmails,
+          [agencyIndex]: value,
+        },
+      };
+      next[propertyIndex] = {
+        ...updated,
+        needsReview: needsPropertyReview(updated),
+      };
       return next;
     });
   }
@@ -175,12 +263,19 @@ export default function Home() {
     if (startPropertyIndex === null) return;
     setRouteLoading(true);
     setRouteError(null);
+    const propertiesForRoute = geocodedProperties.map((property: any) => ({
+      ...property,
+      recipientEmails: Object.values(property.selectedEmails || {}).filter(
+        (email: any) => email && isValidEmail(email)
+      ),
+    }));
+
     try {
       const res = await fetch("/api/optimize-route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          properties: geocodedProperties,
+          properties: propertiesForRoute,
           startIndex: startPropertyIndex,
           viewingMinutesDefault: 15,
           tourDate,
@@ -270,7 +365,8 @@ export default function Home() {
     }
 
     const invalidAgentEmails = routeResult.stops.filter(
-      (stop: any) => !isValidEmail(stop.agentEmail)
+      (stop: any) =>
+        !stop.recipientEmails || stop.recipientEmails.length === 0
     );
     if (invalidAgentEmails.length > 0) {
       setEmailResults(
@@ -321,7 +417,8 @@ export default function Home() {
     setShowEmailConfirmation(false);
   }
 
-  const allResolved = properties.length > 0 && properties.every((p) => !p.needsReview);
+  const allResolved =
+    properties.length > 0 && properties.every((property) => !needsPropertyReview(property));
   const canConfirmRoute =
     startPropertyIndex !== null && tourDate !== "" && startTime !== "";
 
@@ -409,9 +506,7 @@ export default function Home() {
                 <tr className="text-left border-b">
                   <th className="p-2">File</th>
                   <th className="p-2">Address</th>
-                  <th className="p-2">Agent</th>
-                  <th className="p-2">Email</th>
-                  <th className="p-2">Phone</th>
+                  <th className="p-2">Agencies</th>
                   <th className="p-2"></th>
                 </tr>
               </thead>
@@ -439,34 +534,53 @@ export default function Home() {
                       )}
                     </td>
                     <td className="p-2">
-                      <input
-                        value={p.agentName ?? ""}
-                        onChange={(e) => updateField(i, "agentName", e.target.value)}
-                        className="border rounded px-2 py-1 w-full"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        value={p.agentEmail ?? ""}
-                        onChange={(e) => updateField(i, "agentEmail", e.target.value)}
-                        className="border rounded px-2 py-1 w-full"
-                        placeholder="Missing — enter manually"
-                      />
-                      {!p.agentEmail && (
-                        <div className="text-red-500 text-xs mt-1">Agent email is missing</div>
-                      )}
-                      {p.agentEmail && !isValidEmail(p.agentEmail) && (
-                        <div className="text-red-500 text-xs mt-1">
-                          This doesn&apos;t look like a valid email address
+                      {(p.agencies || []).map((agency, agencyIdx) => (
+                        <div key={agencyIdx} style={{ marginBottom: 10 }}>
+                          <p style={{ fontSize: 12, color: "#666", margin: "0 0 4px" }}>
+                            {agency.agencyName || "Agency"}
+                          </p>
+                          <select
+                            value={
+                              p.customEmailMode?.[agencyIdx]
+                                ? "__custom__"
+                                : (p.selectedEmails?.[agencyIdx] || "")
+                            }
+                            onChange={(e) =>
+                              handleAgencyEmailSelect(i, agencyIdx, e.target.value)
+                            }
+                            style={{
+                              width: "100%",
+                              minWidth: 260,
+                              marginBottom: 4,
+                              padding: "4px 6px",
+                            }}
+                          >
+                            {agency.contacts.map((contact, contactIdx) => (
+                              <option key={contactIdx} value={contact.email || ""}>
+                                {contact.name || "Contact"} - {contact.email || "no email"}
+                              </option>
+                            ))}
+                            <option value="__custom__">Type a different email</option>
+                          </select>
+                          {p.customEmailMode?.[agencyIdx] && (
+                            <input
+                              type="email"
+                              value={p.selectedEmails?.[agencyIdx] || ""}
+                              onChange={(e) =>
+                                handleCustomEmailChange(i, agencyIdx, e.target.value)
+                              }
+                              placeholder="name@example.com"
+                              style={{ width: "100%", minWidth: 260, padding: "4px 6px" }}
+                            />
+                          )}
+                          {p.selectedEmails?.[agencyIdx] &&
+                            !isValidEmail(p.selectedEmails[agencyIdx]) && (
+                              <div style={{ color: "#d85a30", fontSize: 12, marginTop: 2 }}>
+                                This doesn&apos;t look like a valid email address
+                              </div>
+                            )}
                         </div>
-                      )}
-                    </td>
-                    <td className="p-2">
-                      <input
-                        value={p.agentPhone ?? ""}
-                        onChange={(e) => updateField(i, "agentPhone", e.target.value)}
-                        className="border rounded px-2 py-1 w-full"
-                      />
+                      ))}
                     </td>
                     <td className="p-2">
                       <button
@@ -753,6 +867,11 @@ export default function Home() {
                         <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
                           {stop.address}
                         </p>
+                        <p style={{ fontSize: 13, color: "#666", margin: "2px 0 0" }}>
+                          {stop.recipientEmails && stop.recipientEmails.length > 0
+                            ? stop.recipientEmails.join(", ")
+                            : "No agent email selected"}
+                        </p>
                         <div
                           style={{
                             fontSize: 13,
@@ -763,8 +882,6 @@ export default function Home() {
                             gap: 4,
                           }}
                         >
-                          <span>{stop.agentName || "Agent pending"}</span>
-                          <span>-</span>
                           <input
                             type="number"
                             min={5}
@@ -889,9 +1006,18 @@ export default function Home() {
               >
                 <p style={{ fontWeight: 500, fontSize: 15, margin: "0 0 4px" }}>
                   Ready to send{" "}
-                  {routeResult.stops.filter((stop: any) => stop.agentEmail).length} viewing
+                  {
+                    routeResult.stops.filter(
+                      (stop: any) =>
+                        stop.recipientEmails && stop.recipientEmails.length > 0
+                    ).length
+                  }{" "}
+                  viewing
                   request
-                  {routeResult.stops.filter((stop: any) => stop.agentEmail).length === 1
+                  {routeResult.stops.filter(
+                    (stop: any) =>
+                      stop.recipientEmails && stop.recipientEmails.length > 0
+                  ).length === 1
                     ? ""
                     : "s"}
                 </p>
@@ -901,7 +1027,7 @@ export default function Home() {
 
                 {routeResult.stops.map(
                   (stop: any, idx: number) =>
-                    stop.agentEmail && (
+                    stop.recipientEmails?.length > 0 && (
                       <div
                         key={idx}
                         style={{
@@ -913,7 +1039,7 @@ export default function Home() {
                           {stop.address}
                         </p>
                         <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
-                          {stop.agentEmail}
+                          {stop.recipientEmails.join(", ")}
                         </p>
                       </div>
                     )
