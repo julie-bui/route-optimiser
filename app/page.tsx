@@ -33,7 +33,9 @@ export default function Home() {
   const [startPropertyIndex, setStartPropertyIndex] = useState<number | null>(null);
   const [tourDate, setTourDate] = useState("");
   const [startTime, setStartTime] = useState("");
-  const [travelMode, setTravelMode] = useState<"publicTransport" | "walking" | "cycling">("publicTransport");
+  const [travelMode, setTravelMode] = useState<
+    "publicTransport" | "walking" | "cycling" | "car" | "taxi"
+  >("publicTransport");
   const [routeResult, setRouteResult] = useState<any>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
@@ -384,13 +386,22 @@ export default function Home() {
               <select
                 value={travelMode}
                 onChange={(e) =>
-                  setTravelMode(e.target.value as "publicTransport" | "walking" | "cycling")
+                  setTravelMode(
+                    e.target.value as
+                      | "publicTransport"
+                      | "walking"
+                      | "cycling"
+                      | "car"
+                      | "taxi"
+                  )
                 }
                 className="border rounded px-2 py-2 w-full"
               >
                 <option value="publicTransport">Public transport (bus, tube, rail)</option>
                 <option value="walking">Walking only</option>
                 <option value="cycling">Cycling</option>
+                <option value="car">Car (driving)</option>
+                <option value="taxi">Taxi / rideshare (estimated)</option>
               </select>
             </label>
 
@@ -511,11 +522,22 @@ export default function Home() {
                           )}
                           {stop.estimatedEBikeMinutes !== null &&
                             stop.estimatedEBikeMinutes !== undefined && (
-                              <p style={{ margin: "4px 0 0" }}>
-                              ~{stop.estimatedEBikeMinutes} min estimated e-bike
-                              (approximate, not based on live data)
+                              <p
+                                style={{
+                                  fontSize: 12,
+                                  color: "#666",
+                                  margin: "0 0 2px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
+                              >
+                                <IconBike size={14} stroke={1.75} />
+                                ~{stop.estimatedEBikeMinutes} min estimated e-bike
+                                (approximate, not based on live data)
                               </p>
                             )}
+                          {stop.estimatedTaxiNote && <div>{stop.estimatedTaxiNote}</div>}
                         </div>
                       )}
 

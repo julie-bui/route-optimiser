@@ -17,7 +17,52 @@ type JourneyResult = {
   legs: LegDetail[];
   unreachable?: boolean;
   unreachableReason?: string;
+  estimatedTaxiNote?: string;
 };
+
+async function getCarJourney(
+  from: PropertyPoint,
+  to: PropertyPoint,
+  departAt: string
+): Promise<JourneyResult> {
+  const url = `https://api.tomtom.com/routing/matrix/2?key=${process.env.TOMTOM_API_KEY}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      origins: [{ point: { latitude: from.lat, longitude: from.lng } }],
+      destinations: [{ point: { latitude: to.lat, longitude: to.lng } }],
+      options: { routeType: "fastest", traffic: "live", departAt },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `TomTom request failed (${from.address} -> ${to.address}): ${res.status} ${errText}`
+    );
+  }
+
+  const data = await res.json();
+  const cell = data.data?.[0];
+  const seconds = cell?.routeSummary?.travelTimeInSeconds;
+
+  if (seconds === undefined || seconds === null) {
+    throw new Error(`No driving route found between "${from.address}" and "${to.address}"`);
+  }
+
+  return {
+    totalMinutes: seconds / 60,
+    legs: [
+      {
+        mode: "car",
+        durationMinutes: Math.round(seconds / 60),
+        lineName: "driving",
+      },
+    ],
+  };
+}
 
 function modeParamFor(travelMode: string): string {
   if (travelMode === "walking") return "walking";
@@ -25,7 +70,33 @@ function modeParamFor(travelMode: string): string {
   return "bus,tube,dlr,overground,elizabeth-line,national-rail,tram,walking"; // public transport
 }
 
-async function getJourney(from: PropertyPoint, to: PropertyPoint, travelMode: string): Promise<JourneyResult> {
+async function getJourney(
+  from: PropertyPoint,
+  to: PropertyPoint,
+  travelMode: string,
+  departAt?: string
+): Promise<JourneyResult> {
+  if (travelMode === "car" || travelMode === "taxi") {
+    const carResult = await getCarJourney(from, to, departAt || new Date().toISOString());
+
+    if (travelMode === "taxi") {
+      const pickupWaitMinutes = 5;
+      return {
+        totalMinutes: carResult.totalMinutes + pickupWaitMinutes,
+        legs: [
+          {
+            mode: "taxi",
+            durationMinutes: Math.round(carResult.totalMinutes),
+            lineName: "driving",
+          },
+        ],
+        estimatedTaxiNote: `Includes an estimated ${pickupWaitMinutes} min pickup wait - not based on live driver availability or pricing.`,
+      };
+    }
+
+    return carResult;
+  }
+
   const mode = modeParamFor(travelMode);
   let url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
   if (travelMode === "walking") {
@@ -56,6 +127,15 @@ async function getJourney(from: PropertyPoint, to: PropertyPoint, travelMode: st
   }
 
   const data = await res.json();
+
+  console.log(
+    `TfL response status for ${from.address} -> ${to.address} (mode: ${travelMode}):`,
+    res.status,
+    "journeys count:",
+    data.journeys?.length,
+    "first journey duration:",
+    data.journeys?.[0]?.duration
+  );
 
   if (!data.journeys || data.journeys.length === 0) {
     throw new Error(`No journey found between "${from.address}" and "${to.address}" for mode "${travelMode}"`);
@@ -133,7 +213,8 @@ function solveRoute(matrix: number[][], startIndex: number): number[] {
 }
 
 export async function POST(req: NextRequest) {
-  const { properties, startIndex, viewingMinutesDefault, travelMode } = await req.json();
+  const { properties, startIndex, viewingMinutesDefault, travelMode, tourDate, startTime } =
+    await req.json();
   const mode = travelMode || "publicTransport";
 
   const points: PropertyPoint[] = properties.map((p: any) => ({
@@ -144,13 +225,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const n = points.length;
+    const departAt = new Date(`${tourDate}T${startTime}:00`).toISOString();
 
     // Step 1: build a quick total-time matrix (used only to decide the best order)
     const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         if (i !== j) {
-          const journey = await getJourney(points[i], points[j], mode);
+          const journey = await getJourney(points[i], points[j], mode, departAt);
           matrix[i][j] = journey.totalMinutes;
         }
       }
@@ -171,7 +253,12 @@ export async function POST(req: NextRequest) {
     // Step 2: for the actual chosen order, fetch full leg-by-leg detail for each consecutive pair
     const legDetailsByStep: (JourneyResult | null)[] = [null]; // first stop has no previous leg
     for (let i = 1; i < order.length; i++) {
-      const journey = await getJourney(points[order[i - 1]], points[order[i]], mode);
+      const journey = await getJourney(
+        points[order[i - 1]],
+        points[order[i]],
+        mode,
+        departAt
+      );
       legDetailsByStep.push(journey);
     }
 
@@ -188,6 +275,7 @@ export async function POST(req: NextRequest) {
         travelMinutesFromPrevious: journey?.totalMinutes ?? 0,
         legs: journey?.legs ?? [],
         estimatedEBikeMinutes,
+        estimatedTaxiNote: journey?.estimatedTaxiNote ?? null,
         viewingMinutes,
       };
     });
