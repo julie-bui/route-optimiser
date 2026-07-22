@@ -104,12 +104,18 @@ export default function Home() {
       const data = await res.json();
 
       // Build a lookup from address -> {lat, lng} so merging is explicit and unambiguous
-      const geocodeLookup = new Map(
-        data.results.map((r: any) => [r.address, { lat: r.lat, lng: r.lng, error: r.error }])
+      const geocodeLookup = new Map<
+        string,
+        { lat: number | null; lng: number | null; error: string | null }
+      >(
+        data.results.map((r: any) => [
+          r.address ?? "",
+          { lat: r.lat, lng: r.lng, error: r.error },
+        ])
       );
 
       const merged = properties.map((p) => {
-        const match = geocodeLookup.get(p.address);
+        const match = geocodeLookup.get(p.address ?? "");
         return {
           ...p,
           lat: match?.lat ?? null,
@@ -424,6 +430,10 @@ export default function Home() {
                         <p>Agent: {stop.agentName ?? "—"}</p>
                         {i === 0 ? (
                           <p>Travel from previous: —</p>
+                        ) : stop.unreachable ? (
+                          <div className="mt-1 text-[13px] text-[#d85a30]">
+                            {stop.unreachableReason}
+                          </div>
                         ) : stop.legs && stop.legs.length > 0 ? (
                           <div className="text-[13px] text-gray-600 mt-1">
                             {stop.legs.map((leg: any, li: number) => (
@@ -450,7 +460,7 @@ export default function Home() {
                         )}
                         {stop.estimatedEBikeMinutes !== null &&
                           stop.estimatedEBikeMinutes !== undefined && (
-                            <p className="text-xs text-gray-400 italic">
+                            <p>
                               ~{stop.estimatedEBikeMinutes} min estimated e-bike
                               (approximate, not based on live data)
                             </p>

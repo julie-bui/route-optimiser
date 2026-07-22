@@ -15,6 +15,8 @@ type LegDetail = {
 type JourneyResult = {
   totalMinutes: number;
   legs: LegDetail[];
+  unreachable?: boolean;
+  unreachableReason?: string;
 };
 
 function modeParamFor(travelMode: string): string {
@@ -25,9 +27,22 @@ function modeParamFor(travelMode: string): string {
 
 async function getJourney(from: PropertyPoint, to: PropertyPoint, travelMode: string): Promise<JourneyResult> {
   const mode = modeParamFor(travelMode);
-  const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
+  let url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
+  if (travelMode === "walking") {
+    url += `&maxWalkingMinutes=180`;
+  }
 
   const res = await fetch(url);
+
+  if (res.status === 404) {
+    const errText = await res.text();
+    return {
+      totalMinutes: Infinity,
+      legs: [],
+      unreachable: true,
+      unreachableReason: `No walkable route found between "${from.address}" and "${to.address}" (TfL 404). ${errText}`,
+    };
+  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -131,6 +146,16 @@ export async function POST(req: NextRequest) {
         if (i !== j) {
           const journey = await getJourney(points[i], points[j], mode);
           matrix[i][j] = journey.totalMinutes;
+        }
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j && !Number.isFinite(matrix[i][j])) {
+          throw new Error(
+            `Unreachable addresses in travel matrix: no finite journey time between "${points[i].address}" and "${points[j].address}". Try a different travel mode or check the addresses.`
+          );
         }
       }
     }
