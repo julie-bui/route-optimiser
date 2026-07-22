@@ -35,13 +35,19 @@ async function getJourney(from: PropertyPoint, to: PropertyPoint, travelMode: st
   const res = await fetch(url);
 
   if (res.status === 404) {
+    if (travelMode === "walking") {
+      return {
+        totalMinutes: Infinity,
+        legs: [],
+        unreachable: true,
+        unreachableReason:
+          "No walking route found within a reasonable time between these two addresses - try public transport for this leg instead.",
+      };
+    }
     const errText = await res.text();
-    return {
-      totalMinutes: Infinity,
-      legs: [],
-      unreachable: true,
-      unreachableReason: `No walkable route found between "${from.address}" and "${to.address}" (TfL 404). ${errText}`,
-    };
+    throw new Error(
+      `TfL returned no journey for mode "${travelMode}" between "${from.address}" and "${to.address}": ${errText}`
+    );
   }
 
   if (!res.ok) {
