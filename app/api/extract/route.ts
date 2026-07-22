@@ -25,6 +25,7 @@ const schema = {
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: schema,
+        temperature: 0,
       },
     });
 
