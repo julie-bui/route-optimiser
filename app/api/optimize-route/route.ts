@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 type PropertyPoint = {
   address: string;
   lat: number;
@@ -24,6 +28,7 @@ async function getWalkingJourney(
   from: PropertyPoint,
   to: PropertyPoint
 ): Promise<JourneyResult> {
+  await sleep(600);
   const url = `https://us1.locationiq.com/v1/directions/walking/${from.lng},${from.lat};${to.lng},${to.lat}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&overview=false`;
 
   const res = await fetch(url);
