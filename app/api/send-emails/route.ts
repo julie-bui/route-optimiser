@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       try {
         console.log(`Sending to (raw):`, JSON.stringify(recipientEmail));
         const { data, error } = await resend.emails.send({
-          from: "viewings@spre.agency",
+          from: "Spacepoint <viewings@spre.agency>",
           to: recipientEmail,
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
           subject: `Viewing request - ${stop.address}`,
