@@ -417,70 +417,122 @@ export default function Home() {
           <p className="text-sm text-gray-500">Optimizing your route…</p>
         ) : (
           <div className="max-w-md">
-            <h1 className="text-2xl font-medium mb-6">Your optimized route</h1>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+                paddingBottom: 12,
+                borderBottom: "0.5px solid #e5e5e5",
+              }}
+            >
+              <p style={{ fontWeight: 500, fontSize: 16, margin: 0 }}>Your route</p>
+              <span style={{ fontSize: 13, color: "#666" }}>
+                {Math.round(routeResult.totalTravelMinutes)} min total travel
+              </span>
+            </div>
 
-            <ol className="mb-6 space-y-4 list-decimal list-inside">
+            <div style={{ position: "relative", paddingLeft: 28 }}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: 9,
+                  top: 8,
+                  bottom: 8,
+                  width: 2,
+                  background: "#ddd",
+                }}
+              />
               {(() => {
                 const arrivals = buildArrivalTimes(routeResult.stops);
                 return routeResult.stops.map((stop: any, i: number) => {
+                  const arrivalTime = formatArrivalTime(arrivals[i]);
+                  const journeyTotal = stop.travelMinutesFromPrevious ?? 0;
+
                   return (
-                    <li key={i} className="border-b border-gray-100 pb-3">
-                      <span className="font-medium">{stop.address}</span>
-                      <div className="ml-5 mt-1 text-sm text-gray-600 space-y-0.5">
-                        <p>Agent: {stop.agentName ?? "—"}</p>
-                        {i === 0 ? (
-                          <p>Travel from previous: —</p>
-                        ) : stop.unreachable ? (
-                          <div className="mt-1 text-[13px] text-[#d85a30]">
-                            {stop.unreachableReason}
-                          </div>
-                        ) : stop.legs && stop.legs.length > 0 ? (
-                          <div className="text-[13px] text-gray-600 mt-1">
-                            {stop.legs.map((leg: any, li: number) => (
-                              <div
-                                key={li}
-                                className="flex gap-1.5 py-0.5"
-                              >
-                                <span className="min-w-[60px] font-medium">
-                                  {leg.durationMinutes} min
-                                </span>
-                                <span>
-                                  {leg.mode === "walking"
-                                    ? "Walk"
-                                    : `${leg.mode} — ${leg.lineName}`}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p>
-                            Travel from previous:{" "}
-                            {stop.travelMinutesFromPrevious ?? 0} min
+                    <div key={i}>
+                      {i > 0 && (
+                        <div
+                          style={{
+                            position: "relative",
+                            marginBottom: 20,
+                            padding: "6px 10px",
+                            background: "#f7f7f7",
+                            borderRadius: 8,
+                            marginLeft: -4,
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 500,
+                              color: "#333",
+                              margin: "0 0 4px",
+                            }}
+                          >
+                            {journeyTotal} min total
                           </p>
-                        )}
-                        {stop.estimatedEBikeMinutes !== null &&
-                          stop.estimatedEBikeMinutes !== undefined && (
-                            <p>
+                          {stop.unreachable ? (
+                            <p style={{ fontSize: 12, color: "#d85a30", margin: 0 }}>
+                              {stop.unreachableReason}
+                            </p>
+                          ) : (
+                            stop.legs.map((leg: any, li: number) => (
+                              <p
+                                key={li}
+                                style={{ fontSize: 12, color: "#666", margin: "0 0 2px" }}
+                              >
+                                {leg.mode === "walking"
+                                  ? `${leg.durationMinutes} min walk`
+                                  : `${leg.durationMinutes} min ${leg.mode} - ${leg.lineName}`}
+                              </p>
+                            ))
+                          )}
+                          {stop.estimatedEBikeMinutes !== null &&
+                            stop.estimatedEBikeMinutes !== undefined && (
+                              <p style={{ margin: "4px 0 0" }}>
                               ~{stop.estimatedEBikeMinutes} min estimated e-bike
                               (approximate, not based on live data)
-                            </p>
-                          )}
-                        <p>Viewing: {stop.viewingMinutes} min</p>
-                        <p>Arrive: {formatArrivalTime(arrivals[i])}</p>
+                              </p>
+                            )}
+                        </div>
+                      )}
+
+                      <div style={{ position: "relative", marginBottom: 20 }}>
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: -28,
+                            top: 2,
+                            width: 20,
+                            height: 20,
+                            borderRadius: "50%",
+                            background: "#000",
+                            color: "#fff",
+                            fontSize: 11,
+                            fontWeight: 500,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {i + 1}
+                        </div>
+                        <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
+                          {arrivalTime}
+                        </p>
+                        <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
+                          {stop.address}
+                        </p>
+                        <p style={{ fontSize: 13, color: "#666", margin: "2px 0 0" }}>
+                          {stop.agentName ?? "—"} - {stop.viewingMinutes} min viewing
+                        </p>
                       </div>
-                    </li>
+                    </div>
                   );
                 });
               })()}
-            </ol>
-
-            <div className="mb-6 text-sm">
-              <p>
-                Total travel time: {routeResult.totalTravelMinutes ?? 0} min
-              </p>
-              <p>
-                Total viewing time: {routeResult.totalViewingMinutes ?? 0} min
-              </p>
             </div>
 
             <div className="flex gap-3">
