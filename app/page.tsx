@@ -169,6 +169,43 @@ export default function Home() {
     }
   }
 
+  async function handleDurationChange(stopIndex: number, newMinutes: number) {
+    if (!routeResult) return;
+
+    const updatedStops = routeResult.stops.map((s: any, i: number) =>
+      i === stopIndex ? { ...s, viewingMinutes: newMinutes } : s
+    );
+
+    setRouteLoading(true);
+    try {
+      const res = await fetch("/api/recalculate-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderedStops: updatedStops,
+          travelMode,
+          tourDate,
+          startTime,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to recalculate schedule");
+      }
+
+      setRouteResult({
+        ...routeResult,
+        stops: data.stops,
+        totalTravelMinutes: data.totalTravelMinutes,
+      });
+    } catch (err: any) {
+      setRouteError(err.message || "Failed to recalculate schedule");
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
   const allResolved = properties.length > 0 && properties.every((p) => !p.needsReview);
   const canConfirmRoute =
     startPropertyIndex !== null && tourDate !== "" && startTime !== "";
@@ -440,9 +477,18 @@ export default function Home() {
               }}
             >
               <p style={{ fontWeight: 500, fontSize: 16, margin: 0 }}>Your route</p>
-              <span style={{ fontSize: 13, color: "#666" }}>
-                {Math.round(routeResult.totalTravelMinutes)} min total travel
-              </span>
+              <div style={{ display: "flex", gap: 16 }}>
+                <span style={{ fontSize: 13, color: "#666" }}>
+                  {Math.round(routeResult.totalTravelMinutes)} min total travel
+                </span>
+                <span style={{ fontSize: 13, color: "#666" }}>
+                  {routeResult.stops.reduce(
+                    (sum: number, s: any) => sum + (s.viewingMinutes || 0),
+                    0
+                  )}{" "}
+                  min total viewing
+                </span>
+              </div>
             </div>
 
             <div style={{ position: "relative", paddingLeft: 28 }}>
@@ -571,9 +617,29 @@ export default function Home() {
                         <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
                           {stop.address}
                         </p>
-                        <p style={{ fontSize: 13, color: "#666", margin: "2px 0 0" }}>
-                          {stop.agentName ?? "—"} - {stop.viewingMinutes} min viewing
-                        </p>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "#666",
+                            margin: "2px 0 0",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          {stop.agentName ?? "—"} -
+                          <input
+                            type="number"
+                            min={5}
+                            step={5}
+                            value={stop.viewingMinutes}
+                            onChange={(e) =>
+                              handleDurationChange(i, parseInt(e.target.value) || 15)
+                            }
+                            style={{ width: 50 }}
+                          />
+                          min viewing
+                        </div>
                       </div>
                     </div>
                   );
