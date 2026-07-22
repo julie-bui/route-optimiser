@@ -10,6 +10,12 @@ type Property = {
   needsReview: boolean;
 };
 
+function hasCompleteUKPostcodeClient(address: string | null): boolean {
+  if (!address) return false;
+  const fullPostcodeRegex = /[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i;
+  return fullPostcodeRegex.test(address);
+}
+
 function formatArrivalTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -64,7 +70,10 @@ export default function Home() {
     setProperties((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
-      next[index].needsReview = !next[index].address || !next[index].agentEmail;
+      next[index].needsReview =
+        !next[index].address ||
+        !next[index].agentEmail ||
+        !hasCompleteUKPostcodeClient(next[index].address);
       return next;
     });
   }
@@ -258,8 +267,14 @@ export default function Home() {
                         value={p.address ?? ""}
                         onChange={(e) => updateField(i, "address", e.target.value)}
                         className="border rounded px-2 py-1 w-full"
-                        placeholder="Missing — enter manually"
+                        placeholder="Missing or incomplete postcode — enter manually"
                       />
+                      {!p.address && (
+                        <div className="text-red-500 text-xs mt-1">Address is missing</div>
+                      )}
+                      {p.address && !hasCompleteUKPostcodeClient(p.address) && (
+                        <div className="text-red-500 text-xs mt-1">Postcode looks incomplete — needs the full code (e.g. EC4N 8AD, not just EC4)</div>
+                      )}
                     </td>
                     <td className="p-2">
                       <input
@@ -275,6 +290,9 @@ export default function Home() {
                         className="border rounded px-2 py-1 w-full"
                         placeholder="Missing — enter manually"
                       />
+                      {!p.agentEmail && (
+                        <div className="text-red-500 text-xs mt-1">Agent email is missing</div>
+                      )}
                     </td>
                     <td className="p-2">
                       <input
