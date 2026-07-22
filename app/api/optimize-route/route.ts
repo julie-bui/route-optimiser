@@ -20,6 +20,42 @@ type JourneyResult = {
   estimatedTaxiNote?: string;
 };
 
+async function getWalkingJourney(
+  from: PropertyPoint,
+  to: PropertyPoint
+): Promise<JourneyResult> {
+  const url = `https://us1.locationiq.com/v1/directions/foot/${from.lng},${from.lat};${to.lng},${to.lat}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&overview=false`;
+
+  const res = await fetch(url);
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `LocationIQ walking request failed (${from.address} -> ${to.address}): ${res.status} ${errText}`
+    );
+  }
+
+  const data = await res.json();
+  const route = data.routes?.[0];
+
+  if (!route) {
+    throw new Error(`No walking route found between "${from.address}" and "${to.address}"`);
+  }
+
+  const minutes = route.duration / 60;
+
+  return {
+    totalMinutes: minutes,
+    legs: [
+      {
+        mode: "walking",
+        durationMinutes: Math.round(minutes),
+        lineName: "walking route",
+      },
+    ],
+  };
+}
+
 async function getCarJourney(
   from: PropertyPoint,
   to: PropertyPoint,
@@ -76,6 +112,10 @@ async function getJourney(
   travelMode: string,
   departAt?: string
 ): Promise<JourneyResult> {
+  if (travelMode === "walking") {
+    return getWalkingJourney(from, to);
+  }
+
   if (travelMode === "car" || travelMode === "taxi") {
     const carResult = await getCarJourney(from, to, departAt || new Date().toISOString());
 
@@ -99,23 +139,10 @@ async function getJourney(
 
   const mode = modeParamFor(travelMode);
   let url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
-  if (travelMode === "walking") {
-    url += `&maxWalkingMinutes=180`;
-    console.log("TfL walking request URL:", url);
-  }
 
   const res = await fetch(url);
 
   if (res.status === 404) {
-    if (travelMode === "walking") {
-      return {
-        totalMinutes: Infinity,
-        legs: [],
-        unreachable: true,
-        unreachableReason:
-          "No walking route found within a reasonable time between these two addresses - try public transport for this leg instead.",
-      };
-    }
     const errText = await res.text();
     throw new Error(
       `TfL returned no journey for mode "${travelMode}" between "${from.address}" and "${to.address}": ${errText}`
