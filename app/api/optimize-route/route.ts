@@ -24,7 +24,7 @@ async function getWalkingJourney(
   from: PropertyPoint,
   to: PropertyPoint
 ): Promise<JourneyResult> {
-  const url = `https://us1.locationiq.com/v1/directions/foot/${from.lng},${from.lat};${to.lng},${to.lat}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&overview=false`;
+  const url = `https://us1.locationiq.com/v1/directions/walking/${from.lng},${from.lat};${to.lng},${to.lat}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&overview=false`;
 
   const res = await fetch(url);
 
