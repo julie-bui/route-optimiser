@@ -634,11 +634,12 @@ export default function Home() {
                             min={5}
                             step={5}
                             value={stop.viewingMinutes ?? 15}
-                            onChange={(e) =>
-                              handleDurationChange(i, parseInt(e.target.value) || 15)
-                            }
+                            onChange={(e) => {
+                              const parsed = parseInt(e.target.value);
+                              handleDurationChange(i, isNaN(parsed) ? 15 : parsed);
+                            }}
                             style={{
-                              width: 44,
+                              width: 60,
                               padding: "2px 4px",
                               margin: 0,
                               textAlign: "center",
