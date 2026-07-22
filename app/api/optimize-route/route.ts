@@ -9,7 +9,7 @@ type PropertyPoint = {
 type LegDetail = {
   mode: string;
   durationMinutes: number;
-  summary: string;
+  lineName: string;
 };
 
 type JourneyResult = {
@@ -42,11 +42,18 @@ async function getJourney(from: PropertyPoint, to: PropertyPoint, travelMode: st
 
   const fastest = data.journeys.reduce((min: any, j: any) => (j.duration < min.duration ? j : min));
 
-  const legs: LegDetail[] = (fastest.legs || []).map((leg: any) => ({
-    mode: leg.mode?.name || "unknown",
-    durationMinutes: leg.duration ?? 0,
-    summary: leg.instruction?.summary || leg.mode?.name || "",
-  }));
+  const legs: LegDetail[] = (fastest.legs || []).map((leg: any) => {
+    const lineName =
+      leg.routeOptions?.[0]?.name ||
+      leg.instruction?.detailed ||
+      leg.mode?.name ||
+      "unknown";
+    return {
+      mode: leg.mode?.name || "unknown",
+      durationMinutes: leg.duration ?? 0,
+      lineName,
+    };
+  });
 
   return { totalMinutes: fastest.duration, legs };
 }

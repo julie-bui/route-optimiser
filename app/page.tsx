@@ -407,14 +407,23 @@ export default function Home() {
                         {i === 0 ? (
                           <p>Travel from previous: —</p>
                         ) : stop.legs && stop.legs.length > 0 ? (
-                          <p className="text-[13px] text-gray-600">
+                          <div className="text-[13px] text-gray-600 mt-1">
                             {stop.legs.map((leg: any, li: number) => (
-                              <span key={li}>
-                                {leg.durationMinutes} min {leg.mode}
-                                {li < stop.legs.length - 1 ? " → " : ""}
-                              </span>
+                              <div
+                                key={li}
+                                className="flex gap-1.5 py-0.5"
+                              >
+                                <span className="min-w-[60px] font-medium">
+                                  {leg.durationMinutes} min
+                                </span>
+                                <span>
+                                  {leg.mode === "walking"
+                                    ? "Walk"
+                                    : `${leg.mode} — ${leg.lineName}`}
+                                </span>
+                              </div>
                             ))}
-                          </p>
+                          </div>
                         ) : (
                           <p>
                             Travel from previous:{" "}
