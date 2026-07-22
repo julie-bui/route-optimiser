@@ -37,6 +37,9 @@ export default function Home() {
     "publicTransport" | "walking" | "cycling" | "car" | "taxi"
   >("publicTransport");
   const [routeResult, setRouteResult] = useState<any>(null);
+  const [editedDurations, setEditedDurations] = useState<{
+    [key: number]: number;
+  } | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -161,6 +164,11 @@ export default function Home() {
         return;
       }
       setRouteResult(data);
+      setEditedDurations(
+        Object.fromEntries(
+          data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
+        )
+      );
       setStep("route");
     } catch (err: any) {
       setRouteError(err?.message || "Failed to optimize route. Please try again.");
@@ -169,12 +177,13 @@ export default function Home() {
     }
   }
 
-  async function handleDurationChange(stopIndex: number, newMinutes: number) {
-    if (!routeResult) return;
+  async function handleRecalculateClick() {
+    if (!editedDurations || !routeResult) return;
 
-    const updatedStops = routeResult.stops.map((s: any, i: number) =>
-      i === stopIndex ? { ...s, viewingMinutes: newMinutes } : s
-    );
+    const updatedStops = routeResult.stops.map((s: any, i: number) => ({
+      ...s,
+      viewingMinutes: editedDurations[i] ?? s.viewingMinutes ?? 15,
+    }));
 
     setRouteLoading(true);
     try {
@@ -199,6 +208,11 @@ export default function Home() {
         stops: data.stops,
         totalTravelMinutes: data.totalTravelMinutes,
       });
+      setEditedDurations(
+        Object.fromEntries(
+          data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
+        )
+      );
     } catch (err: any) {
       setRouteError(err.message || "Failed to recalculate schedule");
     } finally {
@@ -633,10 +647,13 @@ export default function Home() {
                             type="number"
                             min={5}
                             step={5}
-                            value={stop.viewingMinutes ?? 15}
+                            value={editedDurations?.[i] ?? stop.viewingMinutes ?? 15}
                             onChange={(e) => {
-                              const parsed = parseInt(e.target.value);
-                              handleDurationChange(i, isNaN(parsed) ? 15 : parsed);
+                              const raw = e.target.value;
+                              setEditedDurations((prev) => ({
+                                ...(prev ?? {}),
+                                [i]: raw === "" ? 0 : parseInt(raw),
+                              }));
                             }}
                             style={{
                               width: 60,
@@ -664,6 +681,13 @@ export default function Home() {
                 className="border border-gray-300 px-4 py-2 rounded"
               >
                 Back
+              </button>
+              <button
+                onClick={handleRecalculateClick}
+                disabled={routeLoading}
+                className="border border-gray-300 px-4 py-2 rounded disabled:opacity-30"
+              >
+                Recalculate route
               </button>
               <button
                 onClick={() =>
