@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
+import { IconWalk, IconBus, IconTrain, IconBike } from "@tabler/icons-react";
 
 type Property = {
   sourcePdfName: string;
@@ -478,16 +479,35 @@ export default function Home() {
                               {stop.unreachableReason}
                             </p>
                           ) : (
-                            stop.legs.map((leg: any, li: number) => (
-                              <p
-                                key={li}
-                                style={{ fontSize: 12, color: "#666", margin: "0 0 2px" }}
-                              >
-                                {leg.mode === "walking"
-                                  ? `${leg.durationMinutes} min walk`
-                                  : `${leg.durationMinutes} min ${leg.mode} - ${leg.lineName}`}
-                              </p>
-                            ))
+                            stop.legs.map((leg: any, li: number) => {
+                              const Icon =
+                                leg.mode === "walking"
+                                  ? IconWalk
+                                  : leg.mode === "bus"
+                                    ? IconBus
+                                    : leg.mode === "cycle"
+                                      ? IconBike
+                                      : IconTrain;
+
+                              return (
+                                <p
+                                  key={li}
+                                  style={{
+                                    fontSize: 12,
+                                    color: "#666",
+                                    margin: "0 0 2px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                  }}
+                                >
+                                  <Icon size={14} stroke={1.75} />
+                                  {leg.mode === "walking"
+                                    ? `${leg.durationMinutes} min walk`
+                                    : `${leg.durationMinutes} min ${leg.mode} - ${leg.lineName}`}
+                                </p>
+                              );
+                            })
                           )}
                           {stop.estimatedEBikeMinutes !== null &&
                             stop.estimatedEBikeMinutes !== undefined && (
