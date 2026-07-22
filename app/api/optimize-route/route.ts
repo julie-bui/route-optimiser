@@ -101,6 +101,7 @@ async function getJourney(
   let url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
   if (travelMode === "walking") {
     url += `&maxWalkingMinutes=180`;
+    console.log("TfL walking request URL:", url);
   }
 
   const res = await fetch(url);
