@@ -238,12 +238,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const UNREACHABLE_PENALTY_MINUTES = 999;
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
-        if (i !== j && !Number.isFinite(matrix[i][j])) {
-          throw new Error(
-            `Unreachable addresses in travel matrix: no finite journey time between "${points[i].address}" and "${points[j].address}". Try a different travel mode or check the addresses.`
-          );
+        if (
+          i !== j &&
+          (matrix[i][j] === undefined ||
+            matrix[i][j] === null ||
+            !Number.isFinite(matrix[i][j]))
+        ) {
+          matrix[i][j] = UNREACHABLE_PENALTY_MINUTES;
         }
       }
     }
@@ -265,22 +269,30 @@ export async function POST(req: NextRequest) {
     const stops = order.map((idx, i) => {
       const journey = legDetailsByStep[i];
       const viewingMinutes = properties[idx].viewingMinutes ?? viewingMinutesDefault ?? 15;
-
-      // Rough e-bike estimate: only meaningful when cycling mode is selected
-      const estimatedEBikeMinutes =
-        mode === "cycling" && journey ? Math.round(journey.totalMinutes * 0.8) : null;
+      const isUnreachable =
+        (journey?.totalMinutes ?? 0) >= UNREACHABLE_PENALTY_MINUTES;
 
       return {
         ...properties[idx],
-        travelMinutesFromPrevious: journey?.totalMinutes ?? 0,
-        legs: journey?.legs ?? [],
-        estimatedEBikeMinutes,
+        travelMinutesFromPrevious: isUnreachable ? null : (journey?.totalMinutes ?? 0),
+        legs: isUnreachable ? [] : (journey?.legs ?? []),
+        unreachable: isUnreachable,
+        unreachableReason: isUnreachable
+          ? "No route found for this travel mode between these two stops - try switching travel mode."
+          : null,
+        estimatedEBikeMinutes:
+          mode === "cycling" && journey && !isUnreachable
+            ? Math.round(journey.totalMinutes * 0.8)
+            : null,
         estimatedTaxiNote: journey?.estimatedTaxiNote ?? null,
         viewingMinutes,
       };
     });
 
-    const totalTravelMinutes = stops.reduce((sum: number, s: any) => sum + s.travelMinutesFromPrevious, 0);
+    const totalTravelMinutes = stops.reduce(
+      (sum: number, s: any) => sum + (s.travelMinutesFromPrevious ?? 0),
+      0
+    );
     const totalViewingMinutes = stops.reduce((sum: number, s: any) => sum + s.viewingMinutes, 0);
 
     return NextResponse.json({

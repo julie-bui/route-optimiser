@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
-import { IconWalk, IconBus, IconTrain, IconBike } from "@tabler/icons-react";
+import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
 
 type Property = {
   sourcePdfName: string;
@@ -483,7 +483,7 @@ export default function Home() {
                               margin: "0 0 4px",
                             }}
                           >
-                            {journeyTotal} min total
+                            {Math.round(journeyTotal)} min total
                           </p>
                           {stop.unreachable ? (
                             <p style={{ fontSize: 12, color: "#d85a30", margin: 0 }}>
@@ -498,7 +498,11 @@ export default function Home() {
                                     ? IconBus
                                     : leg.mode === "cycle"
                                       ? IconBike
-                                      : IconTrain;
+                                      : leg.mode === "car"
+                                        ? IconCar
+                                        : leg.mode === "taxi"
+                                          ? IconCar
+                                          : IconTrain;
 
                               return (
                                 <p
