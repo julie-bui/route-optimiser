@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
           to: recipientEmail,
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
           subject: `Viewing request - ${stop.address}`,
-          text: `Dear agent,
+          text: `Dear Agent,
 
 We'd like to arrange a viewing of ${stop.address} on ${dateFormatted} at ${viewingTime}.
 

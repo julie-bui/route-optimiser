@@ -117,12 +117,24 @@ export async function POST(req: NextRequest) {
       legDetailsByStep.push(journey);
     }
 
-    const stops = order.map((idx, i) => {
+    let currentTime = new Date(departAt);
+    const stops = order.map((idx: number, i: number) => {
       const journey = legDetailsByStep[i];
-      const viewingMinutes =
-        properties[idx].viewingMinutes ?? viewingMinutesDefault ?? 15;
+      const viewingMinutes = properties[idx].viewingMinutes ?? viewingMinutesDefault ?? 15;
       const isUnreachable =
         (journey?.totalMinutes ?? 0) >= UNREACHABLE_PENALTY_MINUTES;
+
+      if (i > 0 && journey && !isUnreachable) {
+        currentTime = new Date(
+          currentTime.getTime() + journey.totalMinutes * 60000
+        );
+      }
+
+      const arrivalTime = currentTime.toISOString();
+
+      currentTime = new Date(
+        currentTime.getTime() + viewingMinutes * 60000
+      );
 
       return {
         ...properties[idx],
@@ -140,6 +152,7 @@ export async function POST(req: NextRequest) {
             : null,
         estimatedTaxiNote: journey?.estimatedTaxiNote ?? null,
         viewingMinutes,
+        arrivalTime,
       };
     });
 
