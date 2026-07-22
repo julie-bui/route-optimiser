@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
     const dateFormatted = formatDate(tourDate);
 
     try {
+      console.log(
+        `Sending to: "${stop.agentEmail}" (length: ${stop.agentEmail?.length})`
+      );
       const { data, error } = await resend.emails.send({
         from: "onboarding@resend.dev",
         to: stop.agentEmail,
