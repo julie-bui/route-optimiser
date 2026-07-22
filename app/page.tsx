@@ -883,6 +883,7 @@ export default function Home() {
                     </span>
                     {" - "}
                     {r.address}
+                    {r.sentTo ? ` - sent to ${r.sentTo}` : ""}
                     {r.reason ? ` (${r.reason})` : ""}
                   </div>
                 ))}

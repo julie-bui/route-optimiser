@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
         address: stop.address,
         status: "skipped",
         reason: "No agent email available",
+        sentTo: null,
       });
       continue;
     }
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
         : [];
 
       const { data, error } = await resend.emails.send({
-        from: "onboarding@resend.dev",
+        from: "viewings@spre.agency",
         to: stop.agentEmail,
         cc: validCcEmails.length > 0 ? validCcEmails : undefined,
         subject: `Viewing request - ${stop.address}`,
@@ -77,12 +78,14 @@ Mark and Laurie
           address: stop.address,
           status: "failed",
           reason: error.message,
+          sentTo: stop.agentEmail,
         });
       } else {
         results.push({
           address: stop.address,
           status: "sent",
           emailId: data?.id,
+          sentTo: stop.agentEmail,
         });
       }
     } catch (err: any) {
@@ -90,9 +93,11 @@ Mark and Laurie
         address: stop.address,
         status: "failed",
         reason: err.message,
+        sentTo: stop.agentEmail,
       });
     }
   }
 
   return NextResponse.json({ results });
 }
+
