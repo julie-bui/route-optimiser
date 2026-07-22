@@ -17,6 +17,12 @@ function hasCompleteUKPostcodeClient(address: string | null): boolean {
   return fullPostcodeRegex.test(address);
 }
 
+function isValidEmail(email: string): boolean {
+  if (!email) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email.trim());
+}
+
 function formatArrivalTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -230,6 +236,32 @@ export default function Home() {
   async function handleApproveRoute() {
     if (!routeResult) return;
 
+    if (ccEmail && !isValidEmail(ccEmail)) {
+      setEmailResults([
+        {
+          address: "CC email",
+          status: "failed",
+          reason: "The CC email address is not valid - please fix it before sending.",
+        },
+      ]);
+      return;
+    }
+
+    const invalidAgentEmails = routeResult.stops.filter(
+      (stop: any) => !isValidEmail(stop.agentEmail)
+    );
+    if (invalidAgentEmails.length > 0) {
+      setEmailResults(
+        invalidAgentEmails.map((stop: any) => ({
+          address: stop.address,
+          status: "failed",
+          reason:
+            "This property has no valid agent email - go back and fix it before sending.",
+        }))
+      );
+      return;
+    }
+
     setEmailSending(true);
     setEmailResults(null);
 
@@ -388,6 +420,11 @@ export default function Home() {
                       />
                       {!p.agentEmail && (
                         <div className="text-red-500 text-xs mt-1">Agent email is missing</div>
+                      )}
+                      {p.agentEmail && !isValidEmail(p.agentEmail) && (
+                        <div className="text-red-500 text-xs mt-1">
+                          This doesn&apos;t look like a valid email address
+                        </div>
                       )}
                     </td>
                     <td className="p-2">
@@ -744,6 +781,11 @@ export default function Home() {
                 placeholder="your@email.com"
                 style={{ width: 240 }}
               />
+              {ccEmail && !isValidEmail(ccEmail) && (
+                <div style={{ color: "#d85a30", fontSize: 12, marginTop: 4 }}>
+                  This doesn&apos;t look like a valid email address
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">
