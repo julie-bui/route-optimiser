@@ -26,6 +26,7 @@ export default function Home() {
   const [startPropertyIndex, setStartPropertyIndex] = useState<number | null>(null);
   const [tourDate, setTourDate] = useState("");
   const [startTime, setStartTime] = useState("");
+  const [travelMode, setTravelMode] = useState<"publicTransport" | "walking" | "cycling">("publicTransport");
   const [routeResult, setRouteResult] = useState<any>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export default function Home() {
           viewingMinutesDefault: 15,
           tourDate,
           startTime,
+          travelMode,
         }),
       });
       const data = await res.json();
@@ -156,7 +158,7 @@ export default function Home() {
   function buildArrivalTimes(stops: any[]): Date[] {
     const cursor = new Date(`${tourDate}T${startTime}`);
     return stops.map((stop) => {
-      cursor.setSeconds(cursor.getSeconds() + (stop.travelSecondsFromPrevious ?? 0));
+      cursor.setMinutes(cursor.getMinutes() + (stop.travelMinutesFromPrevious ?? 0));
       const arrival = new Date(cursor);
       cursor.setMinutes(cursor.getMinutes() + (stop.viewingMinutes ?? 0));
       return arrival;
@@ -342,7 +344,7 @@ export default function Home() {
               />
             </label>
 
-            <label className="block mb-6">
+            <label className="block mb-4">
               <span className="block text-sm font-medium mb-1">Start time</span>
               <input
                 type="time"
@@ -350,6 +352,21 @@ export default function Home() {
                 onChange={(e) => setStartTime(e.target.value)}
                 className="border rounded px-2 py-2 w-full"
               />
+            </label>
+
+            <label className="block mb-6">
+              <span className="block text-sm font-medium mb-1">Travel mode</span>
+              <select
+                value={travelMode}
+                onChange={(e) =>
+                  setTravelMode(e.target.value as "publicTransport" | "walking" | "cycling")
+                }
+                className="border rounded px-2 py-2 w-full"
+              >
+                <option value="publicTransport">Public transport (bus, tube, rail)</option>
+                <option value="walking">Walking only</option>
+                <option value="cycling">Cycling</option>
+              </select>
             </label>
 
             <div className="flex gap-3">
@@ -382,18 +399,35 @@ export default function Home() {
               {(() => {
                 const arrivals = buildArrivalTimes(routeResult.stops);
                 return routeResult.stops.map((stop: any, i: number) => {
-                  const travelMinutes = Math.round(
-                    (stop.travelSecondsFromPrevious ?? 0) / 60
-                  );
                   return (
                     <li key={i} className="border-b border-gray-100 pb-3">
                       <span className="font-medium">{stop.address}</span>
                       <div className="ml-5 mt-1 text-sm text-gray-600 space-y-0.5">
                         <p>Agent: {stop.agentName ?? "—"}</p>
-                        <p>
-                          Travel from previous:{" "}
-                          {i === 0 ? "—" : `${travelMinutes} min`}
-                        </p>
+                        {i === 0 ? (
+                          <p>Travel from previous: —</p>
+                        ) : stop.legs && stop.legs.length > 0 ? (
+                          <p className="text-[13px] text-gray-600">
+                            {stop.legs.map((leg: any, li: number) => (
+                              <span key={li}>
+                                {leg.durationMinutes} min {leg.mode}
+                                {li < stop.legs.length - 1 ? " → " : ""}
+                              </span>
+                            ))}
+                          </p>
+                        ) : (
+                          <p>
+                            Travel from previous:{" "}
+                            {stop.travelMinutesFromPrevious ?? 0} min
+                          </p>
+                        )}
+                        {stop.estimatedEBikeMinutes !== null &&
+                          stop.estimatedEBikeMinutes !== undefined && (
+                            <p className="text-xs text-gray-400 italic">
+                              ~{stop.estimatedEBikeMinutes} min estimated e-bike
+                              (approximate, not based on live data)
+                            </p>
+                          )}
                         <p>Viewing: {stop.viewingMinutes} min</p>
                         <p>Arrive: {formatArrivalTime(arrivals[i])}</p>
                       </div>
@@ -405,8 +439,7 @@ export default function Home() {
 
             <div className="mb-6 text-sm">
               <p>
-                Total travel time:{" "}
-                {Math.round((routeResult.totalTravelSeconds ?? 0) / 60)} min
+                Total travel time: {routeResult.totalTravelMinutes ?? 0} min
               </p>
               <p>
                 Total viewing time: {routeResult.totalViewingMinutes ?? 0} min

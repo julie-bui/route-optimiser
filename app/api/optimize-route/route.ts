@@ -6,8 +6,26 @@ type PropertyPoint = {
   lng: number;
 };
 
-async function getJourneyDurationSeconds(from: PropertyPoint, to: PropertyPoint): Promise<number> {
-  const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?app_key=${process.env.TFL_API_KEY}`;
+type LegDetail = {
+  mode: string;
+  durationMinutes: number;
+  summary: string;
+};
+
+type JourneyResult = {
+  totalMinutes: number;
+  legs: LegDetail[];
+};
+
+function modeParamFor(travelMode: string): string {
+  if (travelMode === "walking") return "walking";
+  if (travelMode === "cycling") return "cycle";
+  return "bus,tube,dlr,overground,elizabeth-line,national-rail,tram,walking"; // public transport
+}
+
+async function getJourney(from: PropertyPoint, to: PropertyPoint, travelMode: string): Promise<JourneyResult> {
+  const mode = modeParamFor(travelMode);
+  const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${from.lat},${from.lng}/to/${to.lat},${to.lng}?mode=${mode}&app_key=${process.env.TFL_API_KEY}`;
 
   const res = await fetch(url);
 
@@ -18,35 +36,19 @@ async function getJourneyDurationSeconds(from: PropertyPoint, to: PropertyPoint)
 
   const data = await res.json();
 
-  console.log(`TfL raw response for ${from.address} -> ${to.address}:`, JSON.stringify(data.journeys?.map((j: any) => ({ duration: j.duration, legs: j.legs?.map((l: any) => l.mode?.name) })), null, 2));
-
   if (!data.journeys || data.journeys.length === 0) {
-    throw new Error(`No TfL journey found between "${from.address}" and "${to.address}"`);
+    throw new Error(`No journey found between "${from.address}" and "${to.address}" for mode "${travelMode}"`);
   }
 
-  // TfL returns duration in minutes; take the fastest journey option
-  const fastest = data.journeys.reduce((min: any, j: any) =>
-    j.duration < min.duration ? j : min
-  );
+  const fastest = data.journeys.reduce((min: any, j: any) => (j.duration < min.duration ? j : min));
 
-  return fastest.duration * 60; // convert minutes to seconds
-}
+  const legs: LegDetail[] = (fastest.legs || []).map((leg: any) => ({
+    mode: leg.mode?.name || "unknown",
+    durationMinutes: leg.duration ?? 0,
+    summary: leg.instruction?.summary || leg.mode?.name || "",
+  }));
 
-async function getTravelTimeMatrix(points: PropertyPoint[]): Promise<number[][]> {
-  const n = points.length;
-  const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
-
-  // TfL has no batch/matrix endpoint, so call pairwise.
-  // At this app's scale (a handful of properties per tour) this is fine.
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i !== j) {
-        matrix[i][j] = await getJourneyDurationSeconds(points[i], points[j]);
-      }
-    }
-  }
-
-  return matrix;
+  return { totalMinutes: fastest.duration, legs };
 }
 
 function solveRoute(matrix: number[][], startIndex: number): number[] {
@@ -103,7 +105,8 @@ function solveRoute(matrix: number[][], startIndex: number): number[] {
 }
 
 export async function POST(req: NextRequest) {
-  const { properties, startIndex, viewingMinutesDefault } = await req.json();
+  const { properties, startIndex, viewingMinutesDefault, travelMode } = await req.json();
+  const mode = travelMode || "publicTransport";
 
   const points: PropertyPoint[] = properties.map((p: any) => ({
     address: p.address,
@@ -112,36 +115,53 @@ export async function POST(req: NextRequest) {
   }));
 
   try {
-    const matrix = await getTravelTimeMatrix(points);
+    const n = points.length;
 
-    for (let i = 0; i < matrix.length; i++) {
-      for (let j = 0; j < matrix.length; j++) {
-        if (i !== j && (matrix[i][j] === undefined || matrix[i][j] === null || !isFinite(matrix[i][j]))) {
-          throw new Error(
-            `No route found between "${properties[i].address}" and "${properties[j].address}"`
-          );
+    // Step 1: build a quick total-time matrix (used only to decide the best order)
+    const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j) {
+          const journey = await getJourney(points[i], points[j], mode);
+          matrix[i][j] = journey.totalMinutes;
         }
       }
     }
 
     const order = solveRoute(matrix, startIndex);
 
+    // Step 2: for the actual chosen order, fetch full leg-by-leg detail for each consecutive pair
+    const legDetailsByStep: (JourneyResult | null)[] = [null]; // first stop has no previous leg
+    for (let i = 1; i < order.length; i++) {
+      const journey = await getJourney(points[order[i - 1]], points[order[i]], mode);
+      legDetailsByStep.push(journey);
+    }
+
     const stops = order.map((idx, i) => {
-      const travelSeconds = i === 0 ? 0 : matrix[order[i - 1]][idx];
+      const journey = legDetailsByStep[i];
+      const viewingMinutes = properties[idx].viewingMinutes ?? viewingMinutesDefault ?? 15;
+
+      // Rough e-bike estimate: only meaningful when cycling mode is selected
+      const estimatedEBikeMinutes =
+        mode === "cycling" && journey ? Math.round(journey.totalMinutes * 0.8) : null;
+
       return {
         ...properties[idx],
-        travelSecondsFromPrevious: travelSeconds,
-        viewingMinutes: properties[idx].viewingMinutes ?? viewingMinutesDefault ?? 15,
+        travelMinutesFromPrevious: journey?.totalMinutes ?? 0,
+        legs: journey?.legs ?? [],
+        estimatedEBikeMinutes,
+        viewingMinutes,
       };
     });
 
-    const totalTravelSeconds = stops.reduce((sum: number, s: any) => sum + s.travelSecondsFromPrevious, 0);
+    const totalTravelMinutes = stops.reduce((sum: number, s: any) => sum + s.travelMinutesFromPrevious, 0);
     const totalViewingMinutes = stops.reduce((sum: number, s: any) => sum + s.viewingMinutes, 0);
 
     return NextResponse.json({
       stops,
-      totalTravelSeconds,
+      totalTravelMinutes,
       totalViewingMinutes,
+      travelMode: mode,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
