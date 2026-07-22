@@ -624,7 +624,7 @@ export default function Home() {
                             margin: "2px 0 0",
                             display: "flex",
                             alignItems: "center",
-                            gap: 6,
+                            gap: 4,
                           }}
                         >
                           <span>{stop.agentName || "Agent pending"}</span>
@@ -637,7 +637,16 @@ export default function Home() {
                             onChange={(e) =>
                               handleDurationChange(i, parseInt(e.target.value) || 15)
                             }
-                            style={{ width: 50, padding: "2px 4px" }}
+                            style={{
+                              width: 44,
+                              padding: "2px 4px",
+                              margin: 0,
+                              textAlign: "center",
+                              border: "1px solid #999",
+                              borderRadius: 4,
+                              background: "#fff",
+                              color: "#000",
+                            }}
                           />
                           <span>min viewing</span>
                         </div>
