@@ -55,13 +55,14 @@ export async function POST(req: NextRequest) {
         to: stop.agentEmail,
         cc: hasValidCc ? [trimmedCc] : undefined,
         subject: `Viewing request - ${stop.address}`,
-        text: `Hello${stop.agentName ? ` ${stop.agentName}` : ""},
+        text: `Dear${stop.agentName ? ` ${stop.agentName}` : ""},
 
-I'd like to arrange a viewing of ${stop.address} on ${dateFormatted} at ${viewingTime}.
+We'd like to arrange a viewing of ${stop.address} on ${dateFormatted} at ${viewingTime}.
 
 Could you confirm whether this time works, or suggest an alternative?
 
 Thank you,
+Mark and Laurie
 `,
       });
 
