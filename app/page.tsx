@@ -473,7 +473,7 @@ export default function Home() {
                 borderBottom: "0.5px solid #e5e5e5",
               }}
             >
-              <p style={{ fontSize: 13, color: "#666", margin: "0 0 4px" }}>
+              <p style={{ fontWeight: 500, fontSize: 16, margin: "0 0 4px" }}>
                 Date: {tourDate} - Start time: {startTime}
               </p>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
@@ -627,7 +627,7 @@ export default function Home() {
                             gap: 6,
                           }}
                         >
-                          <span>{stop.agentName ?? "—"}</span>
+                          <span>{stop.agentName || "Agent pending"}</span>
                           <span>-</span>
                           <input
                             type="number"
