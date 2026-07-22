@@ -51,6 +51,7 @@ export default function Home() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
   const [ccEmails, setCcEmails] = useState<string[]>([""]);
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(files: FileList) {
@@ -249,13 +250,13 @@ export default function Home() {
     }
   }
 
-  async function handleApproveRoute() {
-    if (!routeResult) return;
+  const filledCcEmails = ccEmails
+    .map((email) => email.trim())
+    .filter((email) => email.length > 0);
+  const invalidCcEmails = filledCcEmails.filter((email) => !isValidEmail(email));
 
-    const filledCcEmails = ccEmails
-      .map((email) => email.trim())
-      .filter((email) => email.length > 0);
-    const invalidCcEmails = filledCcEmails.filter((email) => !isValidEmail(email));
+  function handleApproveRouteClick() {
+    if (!routeResult) return;
 
     if (invalidCcEmails.length > 0) {
       setEmailResults([
@@ -283,6 +284,14 @@ export default function Home() {
       return;
     }
 
+    setEmailResults(null);
+    setShowEmailConfirmation(true);
+  }
+
+  async function handleConfirmSend() {
+    if (!routeResult) return;
+
+    setShowEmailConfirmation(false);
     setEmailSending(true);
     setEmailResults(null);
 
@@ -306,6 +315,10 @@ export default function Home() {
     } finally {
       setEmailSending(false);
     }
+  }
+
+  function handleCancelSend() {
+    setShowEmailConfirmation(false);
   }
 
   const allResolved = properties.length > 0 && properties.every((p) => !p.needsReview);
@@ -857,13 +870,90 @@ export default function Home() {
                 Recalculate route
               </button>
               <button
-                onClick={handleApproveRoute}
+                onClick={handleApproveRouteClick}
                 disabled={emailSending}
                 className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
               >
                 {emailSending ? "Sending emails..." : "Approve route"}
               </button>
             </div>
+            {showEmailConfirmation && (
+              <div
+                style={{
+                  background: "#f7f7f7",
+                  border: "1px solid #ddd",
+                  borderRadius: 12,
+                  padding: 20,
+                  marginTop: 16,
+                }}
+              >
+                <p style={{ fontWeight: 500, fontSize: 15, margin: "0 0 4px" }}>
+                  Ready to send{" "}
+                  {routeResult.stops.filter((stop: any) => stop.agentEmail).length} viewing
+                  request
+                  {routeResult.stops.filter((stop: any) => stop.agentEmail).length === 1
+                    ? ""
+                    : "s"}
+                </p>
+                <p style={{ fontSize: 13, color: "#666", margin: "0 0 14px" }}>
+                  Review the recipients below before sending.
+                </p>
+
+                {routeResult.stops.map(
+                  (stop: any, idx: number) =>
+                    stop.agentEmail && (
+                      <div
+                        key={idx}
+                        style={{
+                          borderTop: "1px solid #e5e5e5",
+                          padding: "10px 0",
+                        }}
+                      >
+                        <p style={{ fontSize: 13, margin: "0 0 2px" }}>
+                          {stop.address}
+                        </p>
+                        <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
+                          {stop.agentEmail}
+                        </p>
+                      </div>
+                    )
+                )}
+
+                {filledCcEmails.length > 0 && (
+                  <div
+                    style={{
+                      borderTop: "1px solid #e5e5e5",
+                      padding: "10px 0 4px",
+                    }}
+                  >
+                    <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
+                      CC: {filledCcEmails.join(", ")}
+                    </p>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button
+                    onClick={handleConfirmSend}
+                    style={{
+                      background: "#000",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: 4,
+                    }}
+                  >
+                    Confirm and send
+                  </button>
+                  <button
+                    onClick={handleCancelSend}
+                    style={{ padding: "8px 16px", borderRadius: 4 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             {emailResults && (
               <div style={{ marginTop: 16 }}>
                 <p style={{ fontWeight: 500, marginBottom: 8 }}>Email status</p>
