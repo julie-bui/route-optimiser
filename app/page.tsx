@@ -50,7 +50,7 @@ export default function Home() {
   const [routeError, setRouteError] = useState<string | null>(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
-  const [ccEmail, setCcEmail] = useState("");
+  const [ccEmails, setCcEmails] = useState<string[]>([""]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(files: FileList) {
@@ -67,6 +67,22 @@ export default function Home() {
 
   function removeProperty(index: number) {
     setProperties((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function updateCcEmail(index: number, value: string) {
+    setCcEmails((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  }
+
+  function addCcEmailField() {
+    setCcEmails((prev) => [...prev, ""]);
+  }
+
+  function removeCcEmailField(index: number) {
+    setCcEmails((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleExtract() {
@@ -236,12 +252,17 @@ export default function Home() {
   async function handleApproveRoute() {
     if (!routeResult) return;
 
-    if (ccEmail && !isValidEmail(ccEmail)) {
+    const filledCcEmails = ccEmails
+      .map((email) => email.trim())
+      .filter((email) => email.length > 0);
+    const invalidCcEmails = filledCcEmails.filter((email) => !isValidEmail(email));
+
+    if (invalidCcEmails.length > 0) {
       setEmailResults([
         {
           address: "CC email",
           status: "failed",
-          reason: "The CC email address is not valid - please fix it before sending.",
+          reason: `One or more CC email addresses are not valid: ${invalidCcEmails.join(", ")}`,
         },
       ]);
       return;
@@ -272,7 +293,7 @@ export default function Home() {
         body: JSON.stringify({
           stops: routeResult.stops,
           tourDate,
-          ccEmail: ccEmail || undefined,
+          ccEmails: filledCcEmails.length > 0 ? filledCcEmails : undefined,
         }),
       });
 
@@ -772,20 +793,53 @@ export default function Home() {
                   marginBottom: 4,
                 }}
               >
-                CC email (optional)
+                CC emails (optional)
               </label>
-              <input
-                type="email"
-                value={ccEmail}
-                onChange={(e) => setCcEmail(e.target.value)}
-                placeholder="your@email.com"
-                style={{ width: 240 }}
-              />
-              {ccEmail && !isValidEmail(ccEmail) && (
-                <div style={{ color: "#d85a30", fontSize: 12, marginTop: 4 }}>
-                  This doesn&apos;t look like a valid email address
+              {ccEmails.map((email, idx) => (
+                <div key={idx} style={{ marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => updateCcEmail(idx, e.target.value)}
+                      placeholder="your@email.com"
+                      style={{ width: 240 }}
+                    />
+                    {ccEmails.length > 1 && (
+                      <button
+                        onClick={() => removeCcEmailField(idx)}
+                        style={{
+                          color: "#d85a30",
+                          fontSize: 12,
+                          border: "none",
+                          background: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {email && !isValidEmail(email) && (
+                    <div style={{ color: "#d85a30", fontSize: 12, marginTop: 2 }}>
+                      This doesn&apos;t look like a valid email address
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
+              <button
+                onClick={addCcEmailField}
+                style={{
+                  fontSize: 13,
+                  border: "1px solid #999",
+                  borderRadius: 4,
+                  padding: "4px 10px",
+                  background: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                + Add email
+              </button>
             </div>
 
             <div className="flex gap-3">

@@ -22,7 +22,7 @@ function formatTime(arrivalTimeIso: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const { stops, tourDate, ccEmail } = await req.json();
+  const { stops, tourDate, ccEmails } = await req.json();
 
   const key = process.env.RESEND_API_KEY;
   console.log(
@@ -47,13 +47,19 @@ export async function POST(req: NextRequest) {
 
     try {
       console.log(`Sending to (raw):`, JSON.stringify(stop.agentEmail));
-      const trimmedCc = typeof ccEmail === "string" ? ccEmail.trim() : "";
-      const hasValidCc = trimmedCc.length > 0 && trimmedCc.includes("@");
+      const validCcEmails = Array.isArray(ccEmails)
+        ? ccEmails
+            .filter(
+              (email: string) =>
+                typeof email === "string" && email.trim().includes("@")
+            )
+            .map((email: string) => email.trim())
+        : [];
 
       const { data, error } = await resend.emails.send({
         from: "onboarding@resend.dev",
         to: stop.agentEmail,
-        cc: hasValidCc ? [trimmedCc] : undefined,
+        cc: validCcEmails.length > 0 ? validCcEmails : undefined,
         subject: `Viewing request - ${stop.address}`,
         text: `Dear${stop.agentName ? ` ${stop.agentName}` : ""},
 
