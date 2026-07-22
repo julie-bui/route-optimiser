@@ -468,16 +468,16 @@ export default function Home() {
           <div className="max-w-md">
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
                 marginBottom: 16,
                 paddingBottom: 12,
                 borderBottom: "0.5px solid #e5e5e5",
               }}
             >
-              <p style={{ fontWeight: 500, fontSize: 16, margin: 0 }}>Your route</p>
-              <div style={{ display: "flex", gap: 16 }}>
+              <p style={{ fontSize: 13, color: "#666", margin: "0 0 4px" }}>
+                Date: {tourDate} - Start time: {startTime}
+              </p>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                <p style={{ fontWeight: 500, fontSize: 16, margin: 0 }}>Your route</p>
                 <span style={{ fontSize: 13, color: "#666" }}>
                   {Math.round(routeResult.totalTravelMinutes)} min total travel
                 </span>
@@ -627,18 +627,19 @@ export default function Home() {
                             gap: 6,
                           }}
                         >
-                          {stop.agentName ?? "—"} -
+                          <span>{stop.agentName ?? "—"}</span>
+                          <span>-</span>
                           <input
                             type="number"
                             min={5}
                             step={5}
-                            value={stop.viewingMinutes}
+                            value={stop.viewingMinutes ?? 15}
                             onChange={(e) =>
                               handleDurationChange(i, parseInt(e.target.value) || 15)
                             }
-                            style={{ width: 50 }}
+                            style={{ width: 50, padding: "2px 4px" }}
                           />
-                          min viewing
+                          <span>min viewing</span>
                         </div>
                       </div>
                     </div>
