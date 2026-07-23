@@ -190,9 +190,9 @@ export async function getJourney(
 
   const data = await res.json();
 
+  const fastestPreview = data.journeys?.[0];
   console.log(
-    `Full TfL response for ${from.address} -> ${to.address}:`,
-    JSON.stringify(data, null, 2)
+    `TfL summary for ${from.address} -> ${to.address}: duration=${fastestPreview?.duration}, legs=${fastestPreview?.legs?.map((leg: any) => `${leg.mode?.name}:${leg.duration}min`).join(", ")}`
   );
 
   if (!data.journeys || data.journeys.length === 0) {
