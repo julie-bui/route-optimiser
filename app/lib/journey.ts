@@ -206,7 +206,6 @@ export async function getJourney(
   );
 
   const legs: LegDetail[] = (fastest.legs || []).map((leg: any) => {
-    console.log("Full leg object:", JSON.stringify(leg, null, 2));
     const lineName =
       leg.routeOptions?.[0]?.name ||
       leg.instruction?.detailed ||
@@ -214,7 +213,6 @@ export async function getJourney(
       "unknown";
     const formatStopName = (point: any): string | null => {
       if (!point?.commonName) return null;
-      console.log("TfL point raw data:", JSON.stringify(point));
       const letter = point.stopLetter;
       return letter ? `${point.commonName} (Stop ${letter})` : point.commonName;
     };

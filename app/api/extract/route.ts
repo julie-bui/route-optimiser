@@ -73,8 +73,10 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
     ]);
 
     const rawText = result.response.text();
-    console.log(`Raw Gemini response for ${file.name}:`, rawText);
     const parsed = JSON.parse(rawText);
+    console.log(
+      `Extracted ${file.name}: address=${parsed.address ? "found" : "missing"}, agencies=${parsed.agencies?.length ?? 0}`
+    );
 
     const hasAnyValidEmail = (parsed.agencies || []).some((agency: any) =>
       (agency.contacts || []).some((contact: any) => contact.email)

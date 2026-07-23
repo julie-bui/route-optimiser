@@ -248,8 +248,6 @@ export default function Home() {
         };
       });
 
-      console.log("Merged geocoded properties:", merged);
-
       setGeocodedProperties(merged);
       setStep("plan");
     } catch (err: any) {

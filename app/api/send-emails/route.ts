@@ -23,23 +23,6 @@ function formatTime(arrivalTimeIso: string): string {
 
 export async function POST(req: NextRequest) {
   const { stops, tourDate, ccEmails } = await req.json();
-  console.log(
-    "Stops received:",
-    JSON.stringify(
-      stops.map((stop: any) => ({
-        address: stop.address,
-        recipientEmails: stop.recipientEmails,
-      })),
-      null,
-      2
-    )
-  );
-
-  const key = process.env.RESEND_API_KEY;
-  console.log(
-    "Resend key loaded (masked):",
-    key ? `${key.slice(0, 6)}...${key.slice(-4)}` : "MISSING"
-  );
 
   const results = [];
   const validCcEmails = Array.isArray(ccEmails)
@@ -69,17 +52,11 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    console.log(
-      `Stop "${stop.address}" arrivalTime raw value:`,
-      stop.arrivalTime,
-      typeof stop.arrivalTime
-    );
     const viewingTime = formatTime(stop.arrivalTime);
     const dateFormatted = formatDate(tourDate);
 
     for (const recipientEmail of recipientEmails) {
       try {
-        console.log(`Sending to (raw):`, JSON.stringify(recipientEmail));
         const { data, error } = await resend.emails.send({
           from: "Spacepoint <viewings@spre.agency>",
           to: recipientEmail,
