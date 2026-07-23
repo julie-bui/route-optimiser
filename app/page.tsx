@@ -18,11 +18,14 @@ type Agency = {
 };
 
 type Property = {
-  sourcePdfName: string;
+  sourcePdfName: string | null;
   address: string | null;
   agencies: Agency[];
   selectedEmails: { [agencyIndex: number]: string };
   customEmailMode: { [agencyIndex: number]: boolean };
+  manualRecipientSearch?: string;
+  manualRecipientEmail?: string;
+  manualRecipientName?: string;
   needsReview: boolean;
 };
 
@@ -39,14 +42,26 @@ function isValidEmail(email: string): boolean {
 }
 
 function needsPropertyReview(property: Property): boolean {
+  const hasValidRecipient =
+    property.agencies.length > 0
+      ? property.agencies.every((_, agencyIndex) =>
+          isValidEmail(property.selectedEmails?.[agencyIndex] || "")
+        )
+      : isValidEmail(property.manualRecipientEmail || "");
+
   return (
     !property.address ||
     !hasCompleteUKPostcodeClient(property.address) ||
-    property.agencies.length === 0 ||
-    !property.agencies.every((_, agencyIndex) =>
-      isValidEmail(property.selectedEmails?.[agencyIndex] || "")
-    )
+    !hasValidRecipient
   );
+}
+
+function recomputeManualNeedsReview(property: any): boolean {
+  const hasValidPostcode = hasCompleteUKPostcodeClient(property.address);
+  const hasValidRecipient =
+    property.manualRecipientEmail &&
+    isValidEmail(property.manualRecipientEmail);
+  return !hasValidPostcode || !hasValidRecipient;
 }
 
 function formatArrivalTime(date: Date): string {
@@ -59,6 +74,7 @@ function formatArrivalTime(date: Date): string {
 
 export default function Home() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [manualAddressText, setManualAddressText] = useState("");
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(false);
   const [geocodeLoading, setGeocodeLoading] = useState(false);
@@ -113,6 +129,31 @@ export default function Home() {
     });
   }
 
+  function handleAddManualAddresses() {
+    const lines = manualAddressText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) return;
+
+    const newProperties = lines.map((address) => ({
+      sourcePdfName: null,
+      address,
+      agencies: [],
+      selectedEmails: {},
+      customEmailMode: {},
+      customEmailNames: {},
+      manualRecipientSearch: "",
+      manualRecipientEmail: "",
+      manualRecipientName: "",
+      needsReview: true,
+    }));
+
+    setProperties((prev) => [...prev, ...newProperties]);
+    setManualAddressText("");
+  }
+
   function removePendingFile(name: string) {
     setPendingFiles((prev) => prev.filter((f) => f.name !== name));
   }
@@ -160,6 +201,80 @@ export default function Home() {
 
   function getFilteredContacts(propertyIndex: number) {
     const search = contactSearchByProperty[propertyIndex] || "";
+    if (search.trim().length === 0) return [];
+
+    return allContacts
+      .filter(
+        (contact) =>
+          contact.name.toLowerCase().includes(search.toLowerCase()) ||
+          contact.company.toLowerCase().includes(search.toLowerCase())
+      )
+      .slice(0, 8);
+  }
+
+  function updateManualRecipientSearch(propertyIndex: number, value: string) {
+    setProperties((prev) => {
+      const next = [...prev];
+      next[propertyIndex] = {
+        ...next[propertyIndex],
+        manualRecipientSearch: value,
+      };
+      return next;
+    });
+  }
+
+  function selectManualRecipientFromSearch(
+    propertyIndex: number,
+    contact: { name: string; email: string }
+  ) {
+    setProperties((prev) => {
+      const next = [...prev];
+      const updated = {
+        ...next[propertyIndex],
+        manualRecipientEmail: contact.email,
+        manualRecipientName: contact.name,
+        manualRecipientSearch: "",
+      };
+      next[propertyIndex] = {
+        ...updated,
+        needsReview: recomputeManualNeedsReview(updated),
+      };
+      return next;
+    });
+  }
+
+  function updateManualRecipientEmail(propertyIndex: number, value: string) {
+    setProperties((prev) => {
+      const next = [...prev];
+      const updated = {
+        ...next[propertyIndex],
+        manualRecipientEmail: value,
+      };
+      next[propertyIndex] = {
+        ...updated,
+        needsReview: recomputeManualNeedsReview(updated),
+      };
+      return next;
+    });
+  }
+
+  function updateManualRecipientName(propertyIndex: number, value: string) {
+    setProperties((prev) => {
+      const next = [...prev];
+      const updated = {
+        ...next[propertyIndex],
+        manualRecipientName: value,
+      };
+      next[propertyIndex] = {
+        ...updated,
+        needsReview: recomputeManualNeedsReview(updated),
+      };
+      return next;
+    });
+  }
+
+  function getManualSearchResults(propertyIndex: number) {
+    const search = properties[propertyIndex]?.manualRecipientSearch || "";
     if (search.trim().length === 0) return [];
 
     return allContacts
@@ -326,19 +441,29 @@ export default function Home() {
     setRouteError(null);
     const propertiesForRoute = geocodedProperties.map(
       (property: any, propertyOriginalIndex: number) => {
-        const recipients = Object.entries(property.selectedEmails || {})
-          .filter(([_, email]: any) => email && isValidEmail(email))
-          .map(([agencyIdxStr, email]: any) => {
-            const agencyIdx = parseInt(agencyIdxStr);
-            const agency = property.agencies?.[agencyIdx];
-            const matchedContact = agency?.contacts?.find(
-              (contact: any) => contact.email === email
-            );
-            return {
-              email,
-              name: matchedContact?.name || null,
-            };
-          });
+        const recipients =
+          property.agencies?.length > 0
+            ? Object.entries(property.selectedEmails || {})
+                .filter(([_, email]: any) => email && isValidEmail(email))
+                .map(([agencyIdxStr, email]: any) => {
+                  const agencyIdx = parseInt(agencyIdxStr);
+                  const agency = property.agencies?.[agencyIdx];
+                  const matchedContact = agency?.contacts?.find(
+                    (contact: any) => contact.email === email
+                  );
+                  return {
+                    email,
+                    name: matchedContact?.name || null,
+                  };
+                })
+            : isValidEmail(property.manualRecipientEmail || "")
+              ? [
+                  {
+                    email: property.manualRecipientEmail,
+                    name: property.manualRecipientName || null,
+                  },
+                ]
+              : [];
         const extraRecipients = (
           additionalRecipients[propertyOriginalIndex] || []
         ).map((recipient) => ({
@@ -577,31 +702,65 @@ export default function Home() {
           <h1 className="text-2xl font-medium mb-4">Upload brochures</h1>
 
           <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+              marginBottom: 16,
             }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            className={`mb-4 border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
-              isDragging ? "border-black bg-gray-50" : "border-gray-300"
-            }`}
           >
-            <p className="text-gray-600">
-              Drag and drop PDF brochures here, or click to browse
-            </p>
-            <p className="text-gray-400 text-sm mt-1">
-              You can select multiple files at once, or add more before extracting
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf"
-              multiple
-              onChange={(e) => e.target.files && addFiles(e.target.files)}
-              className="hidden"
-            />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
+                isDragging ? "border-black bg-gray-50" : "border-gray-300"
+              }`}
+            >
+              <p className="text-gray-600">
+                Drag and drop PDF brochures here, or click to browse
+              </p>
+              <p className="text-gray-400 text-sm mt-1">
+                You can select multiple files at once, or add more before extracting
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                multiple
+                onChange={(e) => e.target.files && addFiles(e.target.files)}
+                className="hidden"
+              />
+            </div>
+
+            <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
+              <p style={{ fontSize: 13, color: "#666", margin: "0 0 8px" }}>
+                Or paste addresses (one per line)
+              </p>
+              <textarea
+                value={manualAddressText}
+                onChange={(e) => setManualAddressText(e.target.value)}
+                rows={3}
+                placeholder="150 Waterloo Road, SE1 8SB"
+                style={{
+                  width: "100%",
+                  fontSize: 13,
+                  padding: 8,
+                  border: "1px solid #999",
+                  borderRadius: 4,
+                }}
+              />
+              <button
+                onClick={handleAddManualAddresses}
+                style={{ marginTop: 8, fontSize: 13, padding: "6px 12px" }}
+              >
+                Add addresses
+              </button>
+            </div>
           </div>
 
           {pendingFiles.length > 0 && (
@@ -673,7 +832,9 @@ export default function Home() {
                       )}
                     </td>
                     <td className="p-2">
-                      {(p.agencies || []).map((agency, agencyIdx) => (
+                      {p.agencies && p.agencies.length > 0 ? (
+                        <>
+                      {p.agencies.map((agency, agencyIdx) => (
                         <div key={agencyIdx} style={{ marginBottom: 10 }}>
                           <p style={{ fontSize: 12, color: "#666", margin: "0 0 4px" }}>
                             {agency.agencyName || "Agency"}
@@ -845,6 +1006,164 @@ export default function Home() {
                           </div>
                         )}
                       </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label
+                            style={{
+                              fontSize: 11,
+                              color: "#666",
+                              display: "block",
+                              marginBottom: 4,
+                            }}
+                          >
+                            Who should receive the viewing request?
+                          </label>
+                          <input
+                            type="text"
+                            value={p.manualRecipientSearch || ""}
+                            onChange={(e) =>
+                              updateManualRecipientSearch(i, e.target.value)
+                            }
+                            placeholder="Search contacts by name or company"
+                            style={{
+                              width: 260,
+                              padding: "4px 6px",
+                              border: "1px solid #999",
+                              borderRadius: 4,
+                              background: "#fff",
+                              color: "#000",
+                              fontSize: 12,
+                              marginBottom: 6,
+                            }}
+                          />
+
+                          {getManualSearchResults(i).length > 0 && (
+                            <div
+                              style={{
+                                border: "1px solid #ddd",
+                                borderRadius: 6,
+                                marginBottom: 8,
+                                width: 300,
+                                overflow: "hidden",
+                              }}
+                            >
+                              {getManualSearchResults(i).map(
+                                (contact, contactIndex) => (
+                                  <div
+                                    key={contact.email}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      padding: "6px 8px",
+                                      borderBottom:
+                                        contactIndex <
+                                        getManualSearchResults(i).length - 1
+                                          ? "1px solid #eee"
+                                          : "none",
+                                      fontSize: 11,
+                                    }}
+                                  >
+                                    <div>
+                                      <p style={{ margin: 0 }}>{contact.name}</p>
+                                      <p style={{ margin: 0, color: "#666" }}>
+                                        {contact.company} - {contact.email}
+                                      </p>
+                                    </div>
+                                    <button
+                                      onClick={() =>
+                                        selectManualRecipientFromSearch(i, contact)
+                                      }
+                                      style={{ fontSize: 11, padding: "3px 8px" }}
+                                    >
+                                      Select
+                                    </button>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          )}
+
+                          {p.manualRecipientEmail && (
+                            <p
+                              style={{
+                                fontSize: 11,
+                                color: "#0f6e56",
+                                margin: "0 0 6px",
+                              }}
+                            >
+                              Selected: {p.manualRecipientName || "(no name)"} -{" "}
+                              {p.manualRecipientEmail}
+                            </p>
+                          )}
+
+                          <p style={{ fontSize: 11, color: "#999", margin: "4px 0" }}>
+                            Or enter manually
+                          </p>
+                          <input
+                            type="email"
+                            value={p.manualRecipientEmail || ""}
+                            onChange={(e) =>
+                              updateManualRecipientEmail(i, e.target.value)
+                            }
+                            placeholder="name@example.com"
+                            style={{
+                              width: 260,
+                              padding: "4px 6px",
+                              border: "1px solid #999",
+                              borderRadius: 4,
+                              background: "#fff",
+                              color: "#000",
+                              fontSize: 12,
+                              marginBottom: 4,
+                            }}
+                          />
+                          {p.manualRecipientEmail &&
+                            !isValidEmail(p.manualRecipientEmail) && (
+                              <div
+                                style={{
+                                  color: "#d85a30",
+                                  fontSize: 11,
+                                  marginTop: 2,
+                                }}
+                              >
+                                This doesn&apos;t look like a valid email address
+                              </div>
+                            )}
+                          {p.needsReview && (
+                            <div
+                              style={{
+                                color: "#d85a30",
+                                fontSize: 11,
+                                marginTop: 4,
+                              }}
+                            >
+                              {!hasCompleteUKPostcodeClient(p.address)
+                                ? "Postcode looks incomplete"
+                                : "Select or enter a valid recipient email"}
+                            </div>
+                          )}
+                          <input
+                            type="text"
+                            value={p.manualRecipientName || ""}
+                            onChange={(e) =>
+                              updateManualRecipientName(i, e.target.value)
+                            }
+                            placeholder="Name (optional)"
+                            style={{
+                              width: 260,
+                              padding: "4px 6px",
+                              border: "1px solid #999",
+                              borderRadius: 4,
+                              background: "#fff",
+                              color: "#000",
+                              fontSize: 12,
+                              marginTop: 4,
+                            }}
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="p-2">
                       <button
