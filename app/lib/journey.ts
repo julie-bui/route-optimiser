@@ -190,6 +190,11 @@ export async function getJourney(
 
   const data = await res.json();
 
+  console.log(
+    `Full TfL response for ${from.address} -> ${to.address}:`,
+    JSON.stringify(data, null, 2)
+  );
+
   if (!data.journeys || data.journeys.length === 0) {
     throw new Error(
       `No journey found between "${from.address}" and "${to.address}" for mode "${travelMode}"`
@@ -201,13 +206,21 @@ export async function getJourney(
   );
 
   const legs: LegDetail[] = (fastest.legs || []).map((leg: any) => {
+    console.log("Full leg object:", JSON.stringify(leg, null, 2));
     const lineName =
       leg.routeOptions?.[0]?.name ||
       leg.instruction?.detailed ||
       leg.mode?.name ||
       "unknown";
-    const fromStation = leg.departurePoint?.commonName || null;
-    const toStation = leg.arrivalPoint?.commonName || null;
+    const formatStopName = (point: any): string | null => {
+      if (!point?.commonName) return null;
+      console.log("TfL point raw data:", JSON.stringify(point));
+      const letter = point.stopLetter;
+      return letter ? `${point.commonName} (Stop ${letter})` : point.commonName;
+    };
+
+    const fromStation = formatStopName(leg.departurePoint);
+    const toStation = formatStopName(leg.arrivalPoint);
     return {
       mode: leg.mode?.name || "unknown",
       durationMinutes: leg.duration ?? 0,
