@@ -801,22 +801,34 @@ export default function Home() {
                                           : IconTrain;
 
                               return (
-                                <p
-                                  key={li}
-                                  style={{
-                                    fontSize: 12,
-                                    color: "#666",
-                                    margin: "0 0 2px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <Icon size={14} stroke={1.75} />
-                                  {leg.mode === "walking"
-                                    ? `${leg.durationMinutes} min walk`
-                                    : `${leg.durationMinutes} min ${leg.mode} - ${leg.lineName}`}
-                                </p>
+                                <div key={li}>
+                                  <div
+                                    style={{
+                                      fontSize: 12,
+                                      color: "#666",
+                                      margin: "0 0 2px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <Icon size={14} stroke={1.75} />
+                                    {leg.mode === "walking"
+                                      ? `${leg.durationMinutes} min walk`
+                                      : `${leg.durationMinutes} min ${leg.mode} - ${leg.lineName}`}
+                                  </div>
+                                  {leg.fromStation && leg.toStation && (
+                                    <div
+                                      style={{
+                                        paddingLeft: 20,
+                                        fontSize: 11,
+                                        color: "#999",
+                                      }}
+                                    >
+                                      {leg.fromStation} - {leg.toStation}
+                                    </div>
+                                  )}
+                                </div>
                               );
                             })
                           )}

@@ -8,6 +8,8 @@ type LegDetail = {
   mode: string;
   durationMinutes: number;
   lineName: string;
+  fromStation: string | null;
+  toStation: string | null;
 };
 
 type JourneyResult = {
@@ -70,6 +72,8 @@ async function getWalkingJourney(
         mode: "walking",
         durationMinutes: Math.round(minutes),
         lineName: "walking route",
+        fromStation: null,
+        toStation: null,
       },
     ],
   };
@@ -113,6 +117,8 @@ async function getCarJourney(
         mode: "car",
         durationMinutes: Math.round(seconds / 60),
         lineName: "driving",
+        fromStation: null,
+        toStation: null,
       },
     ],
   };
@@ -148,6 +154,8 @@ export async function getJourney(
             mode: "taxi",
             durationMinutes: Math.round(carResult.totalMinutes),
             lineName: "driving",
+            fromStation: null,
+            toStation: null,
           },
         ],
         estimatedTaxiNote: `Includes an estimated ${pickupWaitMinutes} min pickup wait - not based on live driver availability or pricing.`,
@@ -198,10 +206,14 @@ export async function getJourney(
       leg.instruction?.detailed ||
       leg.mode?.name ||
       "unknown";
+    const fromStation = leg.departurePoint?.commonName || null;
+    const toStation = leg.arrivalPoint?.commonName || null;
     return {
       mode: leg.mode?.name || "unknown",
       durationMinutes: leg.duration ?? 0,
       lineName,
+      fromStation,
+      toStation,
     };
   });
 
