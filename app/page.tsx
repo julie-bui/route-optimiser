@@ -81,6 +81,11 @@ export default function Home() {
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
   const [ccEmails, setCcEmails] = useState<string[]>([""]);
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
+  const [scheduleEmailAddress, setScheduleEmailAddress] = useState("");
+  const [scheduleEmailSending, setScheduleEmailSending] = useState(false);
+  const [scheduleEmailResult, setScheduleEmailResult] = useState<string | null>(
+    null
+  );
   const [allContacts, setAllContacts] = useState<
     { name: string; company: string; email: string }[]
   >([]);
@@ -443,6 +448,39 @@ export default function Home() {
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
+  }
+
+  async function handleEmailSchedule() {
+    if (!scheduleEmailAddress || !isValidEmail(scheduleEmailAddress)) {
+      setScheduleEmailResult("Please enter a valid email address");
+      return;
+    }
+
+    setScheduleEmailSending(true);
+    setScheduleEmailResult(null);
+
+    try {
+      const res = await fetch("/api/email-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stops: routeResult.stops,
+          recipientEmail: scheduleEmailAddress,
+          tourDate,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setScheduleEmailResult(`Failed: ${data.error || "Unknown error"}`);
+      } else {
+        setScheduleEmailResult(`Sent to ${scheduleEmailAddress}`);
+      }
+    } catch (err: any) {
+      setScheduleEmailResult(`Failed: ${err.message}`);
+    } finally {
+      setScheduleEmailSending(false);
+    }
   }
 
   const filledCcEmails = ccEmails
@@ -1235,6 +1273,41 @@ export default function Home() {
               >
                 Download schedule
               </button>
+              <input
+                type="email"
+                value={scheduleEmailAddress}
+                onChange={(e) => setScheduleEmailAddress(e.target.value)}
+                placeholder="email@example.com"
+                style={{
+                  marginLeft: 8,
+                  padding: "6px 8px",
+                  border: "1px solid #999",
+                  borderRadius: 4,
+                  background: "#fff",
+                  color: "#000",
+                  fontSize: 13,
+                }}
+              />
+              <button
+                onClick={handleEmailSchedule}
+                disabled={scheduleEmailSending}
+                style={{ marginLeft: 4 }}
+              >
+                {scheduleEmailSending ? "Sending..." : "Email schedule"}
+              </button>
+              {scheduleEmailResult && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 12,
+                    color: scheduleEmailResult.startsWith("Sent")
+                      ? "#0f6e56"
+                      : "#a32d2d",
+                  }}
+                >
+                  {scheduleEmailResult}
+                </span>
+              )}
               <button
                 onClick={handleApproveRouteClick}
                 disabled={emailSending}
