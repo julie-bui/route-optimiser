@@ -1,5 +1,12 @@
 "use client";
-import { MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -10,17 +17,46 @@ const numberedIcon = (num: number) =>
     iconSize: [26, 26],
   });
 
+type Leg = {
+  mode: string;
+  fromStation?: string | null;
+  toStation?: string | null;
+  fromStationCoords?: [number, number] | null;
+  toStationCoords?: [number, number] | null;
+};
+
 type Stop = {
   address: string;
   lat: number;
   lng: number;
   pathCoordinates?: [number, number][];
+  legs?: Leg[];
 };
 
 export default function RouteMap({ stops }: { stops: Stop[] }) {
   if (!stops || stops.length === 0) return null;
 
   const center: [number, number] = [stops[0].lat, stops[0].lng];
+  const stationMarkers: { coords: [number, number]; name: string }[] = [];
+
+  stops.forEach((stop) => {
+    (stop.legs || []).forEach((leg) => {
+      if (leg.mode !== "walking") {
+        if (leg.fromStationCoords && leg.fromStation) {
+          stationMarkers.push({
+            coords: leg.fromStationCoords,
+            name: leg.fromStation,
+          });
+        }
+        if (leg.toStationCoords && leg.toStation) {
+          stationMarkers.push({
+            coords: leg.toStationCoords,
+            name: leg.toStation,
+          });
+        }
+      }
+    });
+  });
 
   return (
     <div
@@ -58,6 +94,21 @@ export default function RouteMap({ stops }: { stops: Stop[] }) {
             />
           );
         })}
+        {stationMarkers.map((marker, i) => (
+          <CircleMarker
+            key={`station-${i}`}
+            center={marker.coords}
+            radius={5}
+            pathOptions={{
+              color: "#185FA5",
+              fillColor: "#fff",
+              fillOpacity: 1,
+              weight: 2,
+            }}
+          >
+            <Popup>{marker.name}</Popup>
+          </CircleMarker>
+        ))}
         {stops.map((stop, i) => (
           <Marker
             key={i}

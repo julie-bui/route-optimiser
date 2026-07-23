@@ -10,6 +10,8 @@ type LegDetail = {
   lineName: string;
   fromStation: string | null;
   toStation: string | null;
+  fromStationCoords?: [number, number] | null;
+  toStationCoords?: [number, number] | null;
 };
 
 type JourneyResult = {
@@ -92,16 +94,10 @@ async function getCarJourney(
   to: PropertyPoint,
   departAt: string
 ): Promise<JourneyResult> {
-  const url = `https://api.tomtom.com/routing/matrix/2?key=${process.env.TOMTOM_API_KEY}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      origins: [{ point: { latitude: from.lat, longitude: from.lng } }],
-      destinations: [{ point: { latitude: to.lat, longitude: to.lng } }],
-      options: { routeType: "fastest", traffic: "live", departAt },
-    }),
-  });
+  await sleep(300);
+
+  const routeUrl = `https://api.tomtom.com/routing/1/calculateRoute/${from.lat},${from.lng}:${to.lat},${to.lng}/json?key=${process.env.TOMTOM_API_KEY}&traffic=true&departAt=${encodeURIComponent(departAt)}`;
+  const res = await fetch(routeUrl);
 
   if (!res.ok) {
     const errText = await res.text();
@@ -111,12 +107,20 @@ async function getCarJourney(
   }
 
   const data = await res.json();
-  const cell = data.data?.[0];
-  const seconds = cell?.routeSummary?.travelTimeInSeconds;
+  const route = data.routes?.[0];
 
-  if (seconds === undefined || seconds === null) {
+  if (!route || route.summary?.travelTimeInSeconds == null) {
     throw new Error(`No driving route found between "${from.address}" and "${to.address}"`);
   }
+
+  const seconds = route.summary.travelTimeInSeconds;
+  const pathCoordinates: [number, number][] = (route.legs || []).flatMap(
+    (leg: any) =>
+      (leg.points || []).map(
+        (point: { latitude: number; longitude: number }) =>
+          [point.latitude, point.longitude] as [number, number]
+      )
+  );
 
   return {
     totalMinutes: seconds / 60,
@@ -129,6 +133,7 @@ async function getCarJourney(
         toStation: null,
       },
     ],
+    pathCoordinates,
   };
 }
 
@@ -167,6 +172,7 @@ export async function getJourney(
           },
         ],
         estimatedTaxiNote: `Includes an estimated ${pickupWaitMinutes} min pickup wait - not based on live driver availability or pricing.`,
+        pathCoordinates: carResult.pathCoordinates,
       };
     }
     return carResult;
@@ -227,12 +233,28 @@ export async function getJourney(
 
     const fromStation = formatStopName(leg.departurePoint);
     const toStation = formatStopName(leg.arrivalPoint);
+    const fromStationCoords =
+      typeof leg.departurePoint?.lat === "number" &&
+      typeof leg.departurePoint?.lon === "number"
+        ? ([leg.departurePoint.lat, leg.departurePoint.lon] as [
+            number,
+            number,
+          ])
+        : null;
+    const toStationCoords =
+      typeof leg.arrivalPoint?.lat === "number" &&
+      typeof leg.arrivalPoint?.lon === "number"
+        ? ([leg.arrivalPoint.lat, leg.arrivalPoint.lon] as [number, number])
+        : null;
+
     return {
       mode: leg.mode?.name || "unknown",
       durationMinutes: leg.duration ?? 0,
       lineName,
       fromStation,
       toStation,
+      fromStationCoords,
+      toStationCoords,
     };
   });
 
