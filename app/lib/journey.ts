@@ -228,6 +228,11 @@ export async function getJourney(
     const formatStopName = (point: any): string | null => {
       if (!point?.commonName) return null;
       const letter = point.stopLetter;
+      if (letter && !/^[A-Za-z0-9]+$/.test(letter)) {
+        console.log(
+          `Unusual stopLetter value: "${letter}" for stop "${point.commonName}"`
+        );
+      }
       return letter ? `${point.commonName} (Stop ${letter})` : point.commonName;
     };
 
