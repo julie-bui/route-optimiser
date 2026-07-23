@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
-import { formatRoundedTime } from "./lib/timeFormat";
+import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
 
 const RouteMap = dynamic(() => import("./components/RouteMap"), { ssr: false });
 
@@ -997,7 +997,8 @@ export default function Home() {
               <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
                 <p style={{ fontWeight: 500, fontSize: 16, margin: 0 }}>Your route</p>
                 <span style={{ fontSize: 13, color: "#666" }}>
-                  {Math.round(routeResult.totalTravelMinutes)} min total travel
+                  {Math.round(routeResult.totalTravelMinutes)} min total travel (
+                  {roundUpMinutesToFive(routeResult.totalTravelMinutes)} min rounded up)
                 </span>
                 <span style={{ fontSize: 13, color: "#666" }}>
                   {routeResult.stops.reduce(
@@ -1049,7 +1050,8 @@ export default function Home() {
                               margin: "0 0 4px",
                             }}
                           >
-                            {Math.round(journeyTotal)} min total
+                            {Math.round(journeyTotal)} min total (
+                            {roundUpMinutesToFive(journeyTotal)} min rounded up)
                           </p>
                           {stop.unreachable ? (
                             <p style={{ fontSize: 12, color: "#d85a30", margin: 0 }}>

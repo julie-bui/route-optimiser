@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { roundUpToFiveMinutes } from "../../lib/timeFormat";
+import {
+  roundUpMinutesToFive,
+  roundUpToFiveMinutes,
+} from "../../lib/timeFormat";
 
 function describeLegs(legs: any[] | undefined): string {
   if (!legs || legs.length === 0) return "";
@@ -60,7 +63,15 @@ export async function POST(req: NextRequest) {
 
     const travelMinutes = stop.travelMinutesFromPrevious ?? 0;
     const travelValue =
-      i === 0 ? null : new Date(1899, 11, 30, 0, Math.round(travelMinutes));
+      i === 0
+        ? null
+        : new Date(
+            1899,
+            11,
+            30,
+            0,
+            roundUpMinutesToFive(travelMinutes)
+          );
 
     const row = sheet.addRow([
       i + 1,

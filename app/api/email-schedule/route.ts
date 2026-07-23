@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { formatRoundedTime } from "../../lib/timeFormat";
+import {
+  formatRoundedTime,
+  roundUpMinutesToFive,
+} from "../../lib/timeFormat";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
       const travel =
         index === 0
           ? ""
-          : `${Math.round(stop.travelMinutesFromPrevious ?? 0)} min`;
+          : `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`;
       const mode = index === 0 ? "" : describeLegs(stop.legs);
 
       return `${index + 1}. ${time} - ${stop.address}
