@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 
@@ -81,7 +81,32 @@ export default function Home() {
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
   const [ccEmails, setCcEmails] = useState<string[]>([""]);
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
+  const [emailSubject, setEmailSubject] = useState(
+    "Viewing request - {address}"
+  );
+  const [emailBody, setEmailBody] = useState(`Dear {name},
+
+I'd like to arrange a viewing of {address} on {date} at {time}.
+
+Could you confirm whether this time works, or suggest an alternative?
+
+Thank you,
+Mark and Laurie`);
+  const [contactSearch, setContactSearch] = useState("");
+  const [allContacts, setAllContacts] = useState<
+    { name: string; company: string; email: string }[]
+  >([]);
+  const [additionalRecipients, setAdditionalRecipients] = useState<
+    { name: string; email: string }[]
+  >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/society-contacts.json")
+      .then((res) => res.json())
+      .then((data) => setAllContacts(data))
+      .catch((err) => console.error("Failed to load contacts:", err));
+  }, []);
 
   function addFiles(files: FileList) {
     setPendingFiles((prev) => {
@@ -113,6 +138,22 @@ export default function Home() {
 
   function removeCcEmailField(index: number) {
     setCcEmails((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addRecipient(contact: { name: string; email: string }) {
+    setAdditionalRecipients((prev) => {
+      if (prev.some((recipient) => recipient.email === contact.email)) {
+        return prev;
+      }
+      return [...prev, contact];
+    });
+    setContactSearch("");
+  }
+
+  function removeRecipient(email: string) {
+    setAdditionalRecipients((prev) =>
+      prev.filter((recipient) => recipient.email !== email)
+    );
   }
 
   async function handleExtract() {
@@ -425,6 +466,10 @@ export default function Home() {
           stops: routeResult.stops,
           tourDate,
           ccEmails: filledCcEmails.length > 0 ? filledCcEmails : undefined,
+          additionalRecipients:
+            additionalRecipients.length > 0 ? additionalRecipients : undefined,
+          emailSubject,
+          emailBody,
         }),
       });
 
@@ -447,6 +492,16 @@ export default function Home() {
     properties.length > 0 && properties.every((property) => !needsPropertyReview(property));
   const canConfirmRoute =
     startPropertyIndex !== null && tourDate !== "" && startTime !== "";
+  const filteredContacts =
+    contactSearch.trim().length > 0
+      ? allContacts
+          .filter(
+            (contact) =>
+              contact.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
+              contact.company.toLowerCase().includes(contactSearch.toLowerCase())
+          )
+          .slice(0, 8)
+      : [];
 
   function buildArrivalTimes(stops: any[]): Date[] {
     const cursor = new Date(`${tourDate}T${startTime}`);
@@ -463,6 +518,108 @@ export default function Home() {
       {step === "extract" && (
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-medium mb-4">Upload brochures</h1>
+
+          <div style={{ marginBottom: 20 }}>
+            <label
+              style={{
+                fontSize: 13,
+                color: "#666",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Add a contact to notify (optional)
+            </label>
+            <input
+              type="text"
+              value={contactSearch}
+              onChange={(e) => setContactSearch(e.target.value)}
+              placeholder="Search by name or company"
+              style={{ width: 320, padding: "6px 8px" }}
+            />
+
+            {filteredContacts.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 8,
+                  marginTop: 4,
+                  width: 400,
+                  overflow: "hidden",
+                }}
+              >
+                {filteredContacts.map((contact, i) => (
+                  <div
+                    key={contact.email}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 12px",
+                      borderBottom:
+                        i < filteredContacts.length - 1
+                          ? "1px solid #eee"
+                          : "none",
+                    }}
+                  >
+                    <div>
+                      <p style={{ fontSize: 13, margin: 0 }}>{contact.name}</p>
+                      <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
+                        {contact.company} - {contact.email}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => addRecipient(contact)}
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {additionalRecipients.length > 0 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                }}
+              >
+                {additionalRecipients.map((recipient) => (
+                  <span
+                    key={recipient.email}
+                    style={{
+                      fontSize: 12,
+                      background: "#f1f1f1",
+                      borderRadius: 4,
+                      padding: "4px 8px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    {recipient.name}
+                    <button
+                      onClick={() => removeRecipient(recipient.email)}
+                      style={{
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        color: "#d85a30",
+                        fontSize: 12,
+                        padding: 0,
+                      }}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -1072,6 +1229,49 @@ export default function Home() {
                     ? ""
                     : "s"}
                 </p>
+                <div style={{ marginBottom: 16 }}>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "#666",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    style={{ width: "100%", marginBottom: 10, padding: "6px 8px" }}
+                  />
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "#666",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Message
+                  </label>
+                  <textarea
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    rows={7}
+                    style={{
+                      width: "100%",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      padding: 8,
+                    }}
+                  />
+                  <p style={{ fontSize: 11, color: "#999", margin: "6px 0 0" }}>
+                    Placeholders like {"{name}"}, {"{address}"}, {"{date}"}, and{" "}
+                    {"{time}"} fill in automatically per recipient
+                  </p>
+                </div>
                 <p style={{ fontSize: 13, color: "#666", margin: "0 0 14px" }}>
                   Review the recipients below before sending.
                 </p>
@@ -1094,6 +1294,37 @@ export default function Home() {
                         </p>
                       </div>
                     )
+                )}
+
+                {additionalRecipients.length > 0 && (
+                  <div
+                    style={{
+                      borderTop: "1px solid #e5e5e5",
+                      padding: "10px 0",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        margin: "0 0 4px",
+                      }}
+                    >
+                      Also notifying:
+                    </p>
+                    {additionalRecipients.map((recipient) => (
+                      <p
+                        key={recipient.email}
+                        style={{
+                          fontSize: 12,
+                          color: "#666",
+                          margin: "0 0 2px",
+                        }}
+                      >
+                        {recipient.name} - {recipient.email}
+                      </p>
+                    ))}
+                  </div>
                 )}
 
                 {filledCcEmails.length > 0 && (

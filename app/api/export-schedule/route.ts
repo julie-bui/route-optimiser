@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 
-const TRAVEL_MODE_LABELS: { [key: string]: string } = {
-  publicTransport: "Public transport",
-  walking: "Walking",
-  cycling: "Cycling",
-  car: "Car",
-  taxi: "Taxi/rideshare",
-};
+function describeLegs(legs: any[] | undefined): string {
+  if (!legs || legs.length === 0) return "";
+
+  return legs
+    .map((leg) => {
+      if (leg.mode === "walking") return "Walk";
+      if (leg.mode === "bus") return `Bus ${leg.lineName || ""}`.trim();
+      if (leg.mode === "tube") return `Tube (${leg.lineName || ""})`.trim();
+      if (leg.mode === "national-rail") {
+        return `Train (${leg.lineName || ""})`.trim();
+      }
+      if (leg.mode === "cycle") return "Cycle";
+      if (leg.mode === "car") return "Car";
+      if (leg.mode === "taxi") return "Taxi";
+      return leg.mode;
+    })
+    .join(", ");
+}
 
 export async function POST(req: NextRequest) {
-  const { stops, travelMode } = await req.json();
+  const { stops } = await req.json();
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Tour");
@@ -56,7 +67,7 @@ export async function POST(req: NextRequest) {
       "",
       viewingValue,
       travelValue,
-      TRAVEL_MODE_LABELS[travelMode] || travelMode,
+      i === 0 ? "" : describeLegs(stop.legs),
     ]);
 
     row.getCell(2).numFmt = "h:mm:ss";
