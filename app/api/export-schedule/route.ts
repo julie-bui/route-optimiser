@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
+import { roundUpToFiveMinutes } from "../../lib/timeFormat";
 
 function describeLegs(legs: any[] | undefined): string {
   if (!legs || legs.length === 0) return "";
@@ -47,7 +48,9 @@ export async function POST(req: NextRequest) {
   });
 
   stops.forEach((stop: any, i: number) => {
-    const arrival = stop.arrivalTime ? new Date(stop.arrivalTime) : null;
+    const arrival = stop.arrivalTime
+      ? roundUpToFiveMinutes(new Date(stop.arrivalTime))
+      : null;
     const timeValue = arrival
       ? new Date(1899, 11, 30, arrival.getHours(), arrival.getMinutes())
       : null;

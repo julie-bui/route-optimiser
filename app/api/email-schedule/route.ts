@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { formatRoundedTime } from "../../lib/timeFormat";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 function formatTime(arrivalTimeIso: string): string {
-  const date = new Date(arrivalTimeIso);
-  return date.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  return formatRoundedTime(arrivalTimeIso);
 }
 
 function describeLegs(legs: any[] | undefined): string {

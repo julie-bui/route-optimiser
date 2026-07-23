@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
+import { formatRoundedTime } from "./lib/timeFormat";
 
 const RouteMap = dynamic(() => import("./components/RouteMap"), { ssr: false });
 
@@ -1143,7 +1144,10 @@ export default function Home() {
                           {i + 1}
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
-                          {arrivalTime}
+                          {arrivalTime}{" "}
+                          <span style={{ color: "#999" }}>
+                            ({formatRoundedTime(arrivals[i].toISOString())} rounded up 5 min)
+                          </span>
                         </p>
                         <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
                           {stop.address}
