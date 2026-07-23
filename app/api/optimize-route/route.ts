@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
             ? Math.round(journey.totalMinutes * 0.8)
             : null,
         estimatedTaxiNote: journey?.estimatedTaxiNote ?? null,
+        pathCoordinates: journey?.pathCoordinates ?? [],
         viewingMinutes,
         arrivalTime,
       };

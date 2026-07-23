@@ -1,6 +1,9 @@
 "use client";
 import { useState, useRef } from "react";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
+import dynamic from "next/dynamic";
+
+const RouteMap = dynamic(() => import("./components/RouteMap"), { ssr: false });
 
 type Contact = {
   name: string | null;
@@ -431,9 +434,9 @@ export default function Home() {
   }
 
   return (
-    <main className="p-8 max-w-4xl mx-auto">
+    <main className="p-8 max-w-6xl mx-auto">
       {step === "extract" && (
-        <>
+        <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-medium mb-4">Upload brochures</h1>
 
           <div
@@ -523,6 +526,7 @@ export default function Home() {
                         onChange={(e) => updateField(i, "address", e.target.value)}
                         className="border rounded px-2 py-1 w-full"
                         placeholder="Missing or incomplete postcode — enter manually"
+                        style={{ minWidth: 280 }}
                       />
                       {!p.address && (
                         <div className="text-red-500 text-xs mt-1">Address is missing</div>
@@ -611,14 +615,16 @@ export default function Home() {
           >
             {geocodeLoading ? "Geocoding..." : "Continue"}
           </button>
-        </>
+        </div>
       )}
 
       {step === "plan" && (
         routeLoading ? (
-          <p className="text-sm text-gray-500">Optimizing your route…</p>
+          <p className="max-w-4xl mx-auto text-center text-sm text-gray-500">
+            Optimizing your route…
+          </p>
         ) : (
-          <div className="max-w-md">
+          <div className="max-w-4xl mx-auto">
             <h1 className="text-2xl font-medium mb-6">Plan your tour</h1>
 
             {routeError && (
@@ -711,9 +717,11 @@ export default function Home() {
 
       {step === "route" && routeResult && (
         routeLoading ? (
-          <p className="text-sm text-gray-500">Optimizing your route…</p>
+          <p className="max-w-4xl mx-auto text-center text-sm text-gray-500">
+            Optimizing your route…
+          </p>
         ) : (
-          <div className="max-w-md">
+          <div className="max-w-4xl mx-auto">
             <div
               style={{
                 marginBottom: 16,
@@ -738,6 +746,8 @@ export default function Home() {
                 </span>
               </div>
             </div>
+
+            <RouteMap stops={routeResult.stops} />
 
             <div style={{ position: "relative", paddingLeft: 28 }}>
               <div

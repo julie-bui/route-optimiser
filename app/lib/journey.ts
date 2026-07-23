@@ -20,6 +20,7 @@ type JourneyResult = {
   isEstimate?: boolean;
   estimateNote?: string;
   estimatedTaxiNote?: string;
+  pathCoordinates?: [number, number][];
 };
 
 function sleep(ms: number) {
@@ -47,7 +48,7 @@ async function getWalkingJourney(
   to: PropertyPoint
 ): Promise<JourneyResult> {
   await sleep(600);
-  const url = `https://us1.locationiq.com/v1/directions/walking/${from.lng},${from.lat};${to.lng},${to.lat}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&overview=false`;
+  const url = `https://us1.locationiq.com/v1/directions/walking/${from.lng},${from.lat};${to.lng},${to.lat}?key=${process.env.LOCATIONIQ_ACCESS_TOKEN}&overview=full&geometries=geojson`;
   const res = await fetch(url);
 
   if (!res.ok) {
@@ -65,6 +66,12 @@ async function getWalkingJourney(
   }
 
   const minutes = route.duration / 60;
+  const coordinates: [number, number][] =
+    route.geometry?.coordinates?.map((coordinate: [number, number]) => [
+      coordinate[1],
+      coordinate[0],
+    ]) || [];
+
   return {
     totalMinutes: minutes,
     legs: [
@@ -76,6 +83,7 @@ async function getWalkingJourney(
         toStation: null,
       },
     ],
+    pathCoordinates: coordinates,
   };
 }
 
@@ -228,7 +236,20 @@ export async function getJourney(
     };
   });
 
-  return { totalMinutes: fastest.duration, legs };
+  const pathCoordinates: [number, number][] = [];
+  for (const leg of fastest.legs || []) {
+    const lineStringRaw = leg.path?.lineString;
+    if (lineStringRaw) {
+      try {
+        const parsed = JSON.parse(lineStringRaw);
+        pathCoordinates.push(...parsed);
+      } catch {
+        // Some TfL legs do not include a parsable path.
+      }
+    }
+  }
+
+  return { totalMinutes: fastest.duration, legs, pathCoordinates };
 }
 
 export type { PropertyPoint, JourneyResult, LegDetail };
