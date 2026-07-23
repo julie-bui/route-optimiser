@@ -22,7 +22,7 @@ function formatTime(arrivalTimeIso: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const { stops, tourDate, ccEmails, additionalRecipients } = await req.json();
+  const { stops, tourDate, ccEmails } = await req.json();
 
   const results = [];
   const validCcEmails = Array.isArray(ccEmails)
@@ -35,14 +35,26 @@ export async function POST(req: NextRequest) {
     : [];
 
   for (const stop of stops) {
-    const recipientEmails = Array.isArray(stop.recipientEmails)
-      ? stop.recipientEmails.filter(
-          (email: unknown): email is string =>
-            typeof email === "string" && email.trim().includes("@")
+    const recipients = Array.isArray(stop.recipients)
+      ? stop.recipients.filter(
+          (
+            recipient: unknown
+          ): recipient is { email: string; name?: string | null } =>
+            typeof recipient === "object" &&
+            recipient !== null &&
+            typeof (recipient as { email?: unknown }).email === "string" &&
+            (recipient as { email: string }).email.trim().includes("@")
         )
-      : [];
+      : Array.isArray(stop.recipientEmails)
+        ? stop.recipientEmails
+            .filter(
+              (email: unknown): email is string =>
+                typeof email === "string" && email.trim().includes("@")
+            )
+            .map((email: string) => ({ email, name: null }))
+        : [];
 
-    if (recipientEmails.length === 0) {
+    if (recipients.length === 0) {
       results.push({
         address: stop.address,
         status: "skipped",
@@ -55,8 +67,12 @@ export async function POST(req: NextRequest) {
     const viewingTime = formatTime(stop.arrivalTime);
     const dateFormatted = formatDate(tourDate);
 
-    for (const recipientEmail of recipientEmails) {
-      const greetingName = "Agent";
+    for (const recipient of recipients) {
+      const recipientEmail = recipient.email.trim();
+      const greetingName =
+        typeof recipient.name === "string" && recipient.name.trim().length > 0
+          ? recipient.name.trim().split(" ")[0]
+          : "Agent";
 
       try {
         const { data, error } = await resend.emails.send({
@@ -93,71 +109,6 @@ Mark and Laurie
       } catch (err: any) {
         results.push({
           address: stop.address,
-          status: "failed",
-          reason: err.message,
-          sentTo: recipientEmail,
-        });
-      }
-    }
-  }
-
-  if (Array.isArray(additionalRecipients) && additionalRecipients.length > 0) {
-    const tourSummary = stops
-      .map(
-        (stop: any, index: number) =>
-          `${index + 1}. ${stop.address} - ${formatTime(stop.arrivalTime)}`
-      )
-      .join("\n");
-
-    for (const recipient of additionalRecipients) {
-      if (
-        !recipient ||
-        typeof recipient.email !== "string" ||
-        !recipient.email.trim().includes("@")
-      ) {
-        continue;
-      }
-
-      const recipientEmail = recipient.email.trim();
-      const greetingName =
-        typeof recipient.name === "string" && recipient.name.trim().length > 0
-          ? recipient.name.trim().split(" ")[0]
-          : "Agent";
-
-      try {
-        const { data, error } = await resend.emails.send({
-          from: "Spacepoint <viewings@spre.agency>",
-          to: recipientEmail,
-          subject: `Viewing tour on ${formatDate(tourDate)}`,
-          text: `Hi ${greetingName},
-
-Here is the planned viewing tour for ${formatDate(tourDate)}:
-
-${tourSummary}
-
-Thank you,
-Mark and Laurie
-`,
-        });
-
-        if (error) {
-          results.push({
-            address: "Tour summary",
-            status: "failed",
-            reason: error.message,
-            sentTo: recipientEmail,
-          });
-        } else {
-          results.push({
-            address: "Tour summary",
-            status: "sent",
-            emailId: data?.id,
-            sentTo: recipientEmail,
-          });
-        }
-      } catch (err: any) {
-        results.push({
-          address: "Tour summary",
           status: "failed",
           reason: err.message,
           sentTo: recipientEmail,

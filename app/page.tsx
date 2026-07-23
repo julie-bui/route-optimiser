@@ -81,13 +81,15 @@ export default function Home() {
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
   const [ccEmails, setCcEmails] = useState<string[]>([""]);
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
-  const [contactSearch, setContactSearch] = useState("");
   const [allContacts, setAllContacts] = useState<
     { name: string; company: string; email: string }[]
   >([]);
   const [additionalRecipients, setAdditionalRecipients] = useState<
-    { name: string; email: string }[]
-  >([]);
+    { [propertyIndex: number]: { name: string; email: string }[] }
+  >({});
+  const [contactSearchByProperty, setContactSearchByProperty] = useState<{
+    [propertyIndex: number]: string;
+  }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -129,20 +131,38 @@ export default function Home() {
     setCcEmails((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function addRecipient(contact: { name: string; email: string }) {
+  function addRecipient(
+    propertyIndex: number,
+    contact: { name: string; email: string }
+  ) {
     setAdditionalRecipients((prev) => {
-      if (prev.some((recipient) => recipient.email === contact.email)) {
-        return prev;
-      }
-      return [...prev, contact];
+      const existing = prev[propertyIndex] || [];
+      if (existing.some((recipient) => recipient.email === contact.email)) return prev;
+      return { ...prev, [propertyIndex]: [...existing, contact] };
     });
-    setContactSearch("");
+    setContactSearchByProperty((prev) => ({ ...prev, [propertyIndex]: "" }));
   }
 
-  function removeRecipient(email: string) {
-    setAdditionalRecipients((prev) =>
-      prev.filter((recipient) => recipient.email !== email)
-    );
+  function removeRecipient(propertyIndex: number, email: string) {
+    setAdditionalRecipients((prev) => ({
+      ...prev,
+      [propertyIndex]: (prev[propertyIndex] || []).filter(
+        (recipient) => recipient.email !== email
+      ),
+    }));
+  }
+
+  function getFilteredContacts(propertyIndex: number) {
+    const search = contactSearchByProperty[propertyIndex] || "";
+    if (search.trim().length === 0) return [];
+
+    return allContacts
+      .filter(
+        (contact) =>
+          contact.name.toLowerCase().includes(search.toLowerCase()) ||
+          contact.company.toLowerCase().includes(search.toLowerCase())
+      )
+      .slice(0, 8);
   }
 
   async function handleExtract() {
@@ -298,12 +318,36 @@ export default function Home() {
     if (startPropertyIndex === null) return;
     setRouteLoading(true);
     setRouteError(null);
-    const propertiesForRoute = geocodedProperties.map((property: any) => ({
-      ...property,
-      recipientEmails: Object.values(property.selectedEmails || {}).filter(
-        (email: any) => email && isValidEmail(email)
-      ),
-    }));
+    const propertiesForRoute = geocodedProperties.map(
+      (property: any, propertyOriginalIndex: number) => {
+        const recipients = Object.entries(property.selectedEmails || {})
+          .filter(([_, email]: any) => email && isValidEmail(email))
+          .map(([agencyIdxStr, email]: any) => {
+            const agencyIdx = parseInt(agencyIdxStr);
+            const agency = property.agencies?.[agencyIdx];
+            const matchedContact = agency?.contacts?.find(
+              (contact: any) => contact.email === email
+            );
+            return {
+              email,
+              name: matchedContact?.name || null,
+            };
+          });
+        const extraRecipients = (
+          additionalRecipients[propertyOriginalIndex] || []
+        ).map((recipient) => ({
+          email: recipient.email,
+          name: recipient.name,
+        }));
+        const allRecipients = [...recipients, ...extraRecipients];
+
+        return {
+          ...property,
+          recipients: allRecipients,
+          recipientEmails: allRecipients.map((recipient) => recipient.email),
+        };
+      }
+    );
 
     try {
       const res = await fetch("/api/optimize-route", {
@@ -455,8 +499,6 @@ export default function Home() {
           stops: routeResult.stops,
           tourDate,
           ccEmails: filledCcEmails.length > 0 ? filledCcEmails : undefined,
-          additionalRecipients:
-            additionalRecipients.length > 0 ? additionalRecipients : undefined,
         }),
       });
 
@@ -479,17 +521,6 @@ export default function Home() {
     properties.length > 0 && properties.every((property) => !needsPropertyReview(property));
   const canConfirmRoute =
     startPropertyIndex !== null && tourDate !== "" && startTime !== "";
-  const filteredContacts =
-    contactSearch.trim().length > 0
-      ? allContacts
-          .filter(
-            (contact) =>
-              contact.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
-              contact.company.toLowerCase().includes(contactSearch.toLowerCase())
-          )
-          .slice(0, 8)
-      : [];
-
   function buildArrivalTimes(stops: any[]): Date[] {
     const cursor = new Date(`${tourDate}T${startTime}`);
     return stops.map((stop) => {
@@ -505,108 +536,6 @@ export default function Home() {
       {step === "extract" && (
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-medium mb-4">Upload brochures</h1>
-
-          <div style={{ marginBottom: 20 }}>
-            <label
-              style={{
-                fontSize: 13,
-                color: "#666",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Add a contact to notify (optional)
-            </label>
-            <input
-              type="text"
-              value={contactSearch}
-              onChange={(e) => setContactSearch(e.target.value)}
-              placeholder="Search by name or company"
-              style={{ width: 320, padding: "6px 8px" }}
-            />
-
-            {filteredContacts.length > 0 && (
-              <div
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
-                  marginTop: 4,
-                  width: 400,
-                  overflow: "hidden",
-                }}
-              >
-                {filteredContacts.map((contact, i) => (
-                  <div
-                    key={contact.email}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "8px 12px",
-                      borderBottom:
-                        i < filteredContacts.length - 1
-                          ? "1px solid #eee"
-                          : "none",
-                    }}
-                  >
-                    <div>
-                      <p style={{ fontSize: 13, margin: 0 }}>{contact.name}</p>
-                      <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
-                        {contact.company} - {contact.email}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => addRecipient(contact)}
-                      style={{ fontSize: 12, padding: "4px 10px" }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {additionalRecipients.length > 0 && (
-              <div
-                style={{
-                  marginTop: 10,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                }}
-              >
-                {additionalRecipients.map((recipient) => (
-                  <span
-                    key={recipient.email}
-                    style={{
-                      fontSize: 12,
-                      background: "#f1f1f1",
-                      borderRadius: 4,
-                      padding: "4px 8px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    {recipient.name}
-                    <button
-                      onClick={() => removeRecipient(recipient.email)}
-                      style={{
-                        border: "none",
-                        background: "none",
-                        cursor: "pointer",
-                        color: "#d85a30",
-                        fontSize: 12,
-                        padding: 0,
-                      }}
-                    >
-                      x
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
 
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -752,6 +681,131 @@ export default function Home() {
                             )}
                         </div>
                       ))}
+                      <div
+                        style={{
+                          marginTop: 10,
+                          borderTop: "1px solid #eee",
+                          paddingTop: 8,
+                        }}
+                      >
+                        <label
+                          style={{
+                            fontSize: 11,
+                            color: "#666",
+                            display: "block",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Add someone else to notify (optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={contactSearchByProperty[i] || ""}
+                          onChange={(e) =>
+                            setContactSearchByProperty((prev) => ({
+                              ...prev,
+                              [i]: e.target.value,
+                            }))
+                          }
+                          placeholder="Search by name or company"
+                          style={{
+                            width: 260,
+                            padding: "4px 6px",
+                            border: "1px solid #999",
+                            borderRadius: 4,
+                            background: "#fff",
+                            color: "#000",
+                            fontSize: 12,
+                          }}
+                        />
+
+                        {getFilteredContacts(i).length > 0 && (
+                          <div
+                            style={{
+                              border: "1px solid #ddd",
+                              borderRadius: 6,
+                              marginTop: 4,
+                              width: 300,
+                              overflow: "hidden",
+                            }}
+                          >
+                            {getFilteredContacts(i).map((contact, contactIndex) => (
+                              <div
+                                key={contact.email}
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  padding: "6px 8px",
+                                  borderBottom:
+                                    contactIndex < getFilteredContacts(i).length - 1
+                                      ? "1px solid #eee"
+                                      : "none",
+                                  fontSize: 11,
+                                }}
+                              >
+                                <div>
+                                  <p style={{ margin: 0 }}>{contact.name}</p>
+                                  <p style={{ margin: 0, color: "#666" }}>
+                                    {contact.company} - {contact.email}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => addRecipient(i, contact)}
+                                  style={{ fontSize: 11, padding: "3px 8px" }}
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {(additionalRecipients[i] || []).length > 0 && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 4,
+                            }}
+                          >
+                            {(additionalRecipients[i] || []).map(
+                              (recipient) => (
+                                <span
+                                  key={recipient.email}
+                                  style={{
+                                    fontSize: 11,
+                                    background: "#f1f1f1",
+                                    borderRadius: 4,
+                                    padding: "3px 6px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                  }}
+                                >
+                                  {recipient.name}
+                                  <button
+                                    onClick={() =>
+                                      removeRecipient(i, recipient.email)
+                                    }
+                                    style={{
+                                      border: "none",
+                                      background: "none",
+                                      cursor: "pointer",
+                                      color: "#d85a30",
+                                      fontSize: 11,
+                                      padding: 0,
+                                    }}
+                                  >
+                                    x
+                                  </button>
+                                </span>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="p-2">
                       <button
@@ -1238,37 +1292,6 @@ export default function Home() {
                         </p>
                       </div>
                     )
-                )}
-
-                {additionalRecipients.length > 0 && (
-                  <div
-                    style={{
-                      borderTop: "1px solid #e5e5e5",
-                      padding: "10px 0",
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 500,
-                        margin: "0 0 4px",
-                      }}
-                    >
-                      Also notifying:
-                    </p>
-                    {additionalRecipients.map((recipient) => (
-                      <p
-                        key={recipient.email}
-                        style={{
-                          fontSize: 12,
-                          color: "#666",
-                          margin: "0 0 2px",
-                        }}
-                      >
-                        {recipient.name} - {recipient.email}
-                      </p>
-                    ))}
-                  </div>
                 )}
 
                 {filledCcEmails.length > 0 && (
