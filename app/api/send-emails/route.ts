@@ -22,25 +22,7 @@ function formatTime(arrivalTimeIso: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const {
-    stops,
-    tourDate,
-    ccEmails,
-    additionalRecipients,
-    emailSubject,
-    emailBody,
-  } = await req.json();
-
-  function fillTemplate(
-    template: string,
-    values: { [key: string]: string }
-  ): string {
-    let result = template;
-    for (const [key, value] of Object.entries(values)) {
-      result = result.split(`{${key}}`).join(value);
-    }
-    return result;
-  }
+  const { stops, tourDate, ccEmails, additionalRecipients } = await req.json();
 
   const results = [];
   const validCcEmails = Array.isArray(ccEmails)
@@ -75,36 +57,22 @@ export async function POST(req: NextRequest) {
 
     for (const recipientEmail of recipientEmails) {
       const greetingName = "Agent";
-      const templateValues = {
-        address: stop.address,
-        name: greetingName,
-        date: dateFormatted,
-        time: viewingTime,
-      };
-      const filledSubject = fillTemplate(
-        emailSubject || "Viewing request - {address}",
-        templateValues
-      );
-      const filledBody = fillTemplate(
-        emailBody ||
-          `Dear {name},
-
-I'd like to arrange a viewing of {address} on {date} at {time}.
-
-Could you confirm whether this time works, or suggest an alternative?
-
-Thank you,
-Mark and Laurie`,
-        templateValues
-      );
 
       try {
         const { data, error } = await resend.emails.send({
           from: "Spacepoint <viewings@spre.agency>",
           to: recipientEmail,
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
-          subject: filledSubject,
-          text: filledBody,
+          subject: `Viewing request - ${stop.address}`,
+          text: `Dear ${greetingName},
+
+I'd like to arrange a viewing of ${stop.address} on ${dateFormatted} at ${viewingTime}.
+
+Could you confirm whether this time works, or suggest an alternative?
+
+Thank you,
+Mark and Laurie
+`,
         });
 
         if (error) {
