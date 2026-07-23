@@ -350,6 +350,27 @@ export default function Home() {
     }
   }
 
+  async function handleDownloadSchedule() {
+    const res = await fetch("/api/export-schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stops: routeResult.stops,
+        travelMode,
+      }),
+    });
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tour-schedule-${tourDate}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
   const filledCcEmails = ccEmails
     .map((email) => email.trim())
     .filter((email) => email.length > 0);
@@ -1009,6 +1030,12 @@ export default function Home() {
                 className="border border-gray-300 px-4 py-2 rounded disabled:opacity-30"
               >
                 Recalculate route
+              </button>
+              <button
+                onClick={handleDownloadSchedule}
+                className="border border-gray-300 px-4 py-2 rounded"
+              >
+                Download schedule
               </button>
               <button
                 onClick={handleApproveRouteClick}
