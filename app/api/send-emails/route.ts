@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
         const { data, error } = await resend.emails.send({
           from: "Spacepoint <viewings@spre.agency>",
           to: recipientEmail,
+          replyTo: "juliehamibui@outlook.com",
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
           subject: `Viewing request - ${stop.address}`,
           text: `Dear ${greetingName},
