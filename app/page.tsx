@@ -27,6 +27,7 @@ type Property = {
   manualRecipientEmail?: string;
   manualRecipientName?: string;
   lowConfidenceMatch?: boolean;
+  userConfirmedAddress?: boolean;
   needsReview: boolean;
 };
 
@@ -52,7 +53,7 @@ function needsPropertyReview(property: Property): boolean {
 
   return (
     !property.address ||
-    Boolean(property.lowConfidenceMatch) ||
+    (Boolean(property.lowConfidenceMatch) && !property.userConfirmedAddress) ||
     !hasValidRecipient
   );
 }
@@ -339,6 +340,20 @@ Spacepoint Team`);
         ...next[index],
         [field]: value,
         lowConfidenceMatch: false,
+        userConfirmedAddress: false,
+      };
+      next[index].needsReview = needsPropertyReview(next[index]);
+      return next;
+    });
+  }
+
+  function confirmLowConfidenceAddress(index: number) {
+    setProperties((prev) => {
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        lowConfidenceMatch: false,
+        userConfirmedAddress: true,
       };
       next[index].needsReview = needsPropertyReview(next[index]);
       return next;
@@ -444,7 +459,8 @@ Spacepoint Team`);
       const merged = properties.map((p) => {
         const match = geocodeLookup.get(p.address ?? "");
         const confidence = match?.confidence ?? null;
-        const isLowConfidence = confidence !== null && confidence < 8;
+        const isLowConfidence =
+          confidence !== null && confidence < 8 && !p.userConfirmedAddress;
         const resolvedAddress =
           confidence !== null && confidence >= 8 && match?.resolvedFormatted
             ? match.resolvedFormatted
@@ -879,7 +895,21 @@ Spacepoint Team`);
                       )}
                       {p.address && p.lowConfidenceMatch && (
                         <div className="text-red-500 text-xs mt-1">
-                          This address couldn&apos;t be matched confidently — please check it or add more detail
+                          This address couldn&apos;t be matched confidently — please check it or add more detail.{" "}
+                          <button
+                            onClick={() => confirmLowConfidenceAddress(i)}
+                            style={{
+                              color: "#0f6e56",
+                              textDecoration: "underline",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              padding: 0,
+                            }}
+                          >
+                            I&apos;ve checked, this is correct
+                          </button>
                         </div>
                       )}
                     </td>
