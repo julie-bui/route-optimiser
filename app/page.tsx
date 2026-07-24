@@ -335,7 +335,11 @@ Spacepoint Team`);
   function updateField(index: number, field: "address", value: string) {
     setProperties((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
+      next[index] = {
+        ...next[index],
+        [field]: value,
+        lowConfidenceMatch: false,
+      };
       next[index].needsReview = needsPropertyReview(next[index]);
       return next;
     });
