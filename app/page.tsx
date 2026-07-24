@@ -26,6 +26,7 @@ type Property = {
   manualRecipientSearch?: string;
   manualRecipientEmail?: string;
   manualRecipientName?: string;
+  lowConfidenceMatch?: boolean;
   needsReview: boolean;
 };
 
@@ -42,8 +43,9 @@ function isValidEmail(email: string): boolean {
 }
 
 function needsPropertyReview(property: Property): boolean {
+  const isManualProperty = property.agencies.length === 0;
   const hasValidRecipient =
-    property.agencies.length > 0
+    !isManualProperty
       ? property.agencies.every((_, agencyIndex) =>
           isValidEmail(property.selectedEmails?.[agencyIndex] || "")
         )
@@ -51,17 +53,17 @@ function needsPropertyReview(property: Property): boolean {
 
   return (
     !property.address ||
-    !hasCompleteUKPostcodeClient(property.address) ||
+    (!isManualProperty && !hasCompleteUKPostcodeClient(property.address)) ||
+    Boolean(property.lowConfidenceMatch) ||
     !hasValidRecipient
   );
 }
 
 function recomputeManualNeedsReview(property: any): boolean {
-  const hasValidPostcode = hasCompleteUKPostcodeClient(property.address);
   const hasValidRecipient =
     property.manualRecipientEmail &&
     isValidEmail(property.manualRecipientEmail);
-  return !hasValidPostcode || !hasValidRecipient;
+  return !property.address || Boolean(property.lowConfidenceMatch) || !hasValidRecipient;
 }
 
 function formatArrivalTime(date: Date): string {
@@ -156,7 +158,7 @@ Spacepoint Team`);
       manualRecipientSearch: "",
       manualRecipientEmail: "",
       manualRecipientName: "",
-      needsReview: true,
+      needsReview: false,
     }));
 
     setProperties((prev) => [...prev, ...newProperties]);
@@ -414,29 +416,64 @@ Spacepoint Team`);
 
       const data = await res.json();
 
-      // Build a lookup from address -> {lat, lng} so merging is explicit and unambiguous
+      // Build a lookup from address -> geocoding result so merging is explicit.
       const geocodeLookup = new Map<
         string,
-        { lat: number | null; lng: number | null; error: string | null }
+        {
+          lat: number | null;
+          lng: number | null;
+          confidence: number | null;
+          resolvedFormatted: string | null;
+          error: string | null;
+        }
       >(
         data.results.map((r: any) => [
           r.address ?? "",
-          { lat: r.lat, lng: r.lng, error: r.error },
+          {
+            lat: r.lat,
+            lng: r.lng,
+            confidence: r.confidence ?? null,
+            resolvedFormatted: r.resolvedFormatted ?? null,
+            error: r.error,
+          },
         ])
       );
 
       const merged = properties.map((p) => {
         const match = geocodeLookup.get(p.address ?? "");
-        return {
+        const confidence = match?.confidence ?? null;
+        const isLowConfidence = confidence !== null && confidence < 8;
+        const resolvedAddress =
+          confidence !== null && confidence >= 8 && match?.resolvedFormatted
+            ? match.resolvedFormatted
+            : p.address;
+        const updated = {
           ...p,
+          address: resolvedAddress,
           lat: match?.lat ?? null,
           lng: match?.lng ?? null,
           geocodeError: match?.error ?? null,
+          lowConfidenceMatch: isLowConfidence,
+        };
+
+        return {
+          ...updated,
+          needsReview:
+            needsPropertyReview(updated) ||
+            isLowConfidence ||
+            match?.lat == null ||
+            match?.lng == null,
         };
       });
 
       setGeocodedProperties(merged);
-      setStep("plan");
+      setProperties(merged);
+
+      if (merged.some((property) => property.needsReview)) {
+        setGeocodeError("Some addresses need review before continuing.");
+      } else {
+        setStep("plan");
+      }
     } catch (err: any) {
       setGeocodeError(err.message || "Geocoding failed");
     } finally {
@@ -838,7 +875,9 @@ Spacepoint Team`);
                       {!p.address && (
                         <div className="text-red-500 text-xs mt-1">Address is missing</div>
                       )}
-                      {p.address && !hasCompleteUKPostcodeClient(p.address) && (
+                      {p.agencies.length > 0 &&
+                        p.address &&
+                        !hasCompleteUKPostcodeClient(p.address) && (
                         <div className="text-red-500 text-xs mt-1">Postcode looks incomplete — needs the full code (e.g. EC4N 8AD, not just EC4)</div>
                       )}
                     </td>
@@ -1150,8 +1189,8 @@ Spacepoint Team`);
                                 marginTop: 4,
                               }}
                             >
-                              {!hasCompleteUKPostcodeClient(p.address)
-                                ? "Postcode looks incomplete"
+                              {p.lowConfidenceMatch
+                                ? "This address couldn't be matched confidently - please check it or add a postcode"
                                 : "Select or enter a valid recipient email"}
                             </div>
                           )}
