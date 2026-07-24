@@ -25,6 +25,49 @@ function normalizeHouseNumber(value: string): string {
   return value.toLowerCase().replace(/\s+/g, "").replace(/–/g, "-");
 }
 
+function resultSeemsToMatchStreet(
+  queryAddress: string,
+  resolvedFormatted: string | null
+): boolean {
+  if (!resolvedFormatted) return false;
+
+  const ignoredTokens = new Set([
+    "the",
+    "and",
+    "road",
+    "street",
+    "lane",
+    "avenue",
+    "place",
+    "square",
+    "court",
+    "way",
+    "drive",
+    "close",
+    "london",
+    "uk",
+    "united",
+    "kingdom",
+    "england",
+  ]);
+  const tokensFor = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter(
+        (token) =>
+          token.length > 2 &&
+          !ignoredTokens.has(token) &&
+          !/^[a-z]{1,2}\d[a-z\d]?$/.test(token) &&
+          !/^\d+$/.test(token)
+      );
+
+  const queryTokens = tokensFor(queryAddress);
+  const resolvedTokens = new Set(tokensFor(resolvedFormatted));
+  return queryTokens.some((token) => resolvedTokens.has(token));
+}
+
 async function geocodeWithGoogle(queryAddress: string) {
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
     queryAddress
@@ -135,7 +178,27 @@ export async function POST(req: NextRequest) {
         let usedPlacesFallback = false;
 
         if (!attempt.resolvedHouseNumber && attempt.lat) {
-          const placesResult = await geocodeWithPlacesAPI(searchAddress);
+          let placesResult: {
+            lat: number | null;
+            lng: number | null;
+            resolvedFormatted: string | null;
+            resolvedHouseNumber: string | null;
+          };
+          try {
+            placesResult = await geocodeWithPlacesAPI(searchAddress);
+            console.log(
+              `Places API result for "${address}":`,
+              JSON.stringify(placesResult)
+            );
+          } catch (placesErr: any) {
+            console.log(`Places API ERROR for "${address}":`, placesErr.message);
+            placesResult = {
+              lat: null,
+              lng: null,
+              resolvedFormatted: null,
+              resolvedHouseNumber: null,
+            };
+          }
 
           if (placesResult.lat && placesResult.resolvedHouseNumber) {
             const placesWithinBounds = isWithinLondonBounds(
@@ -146,8 +209,16 @@ export async function POST(req: NextRequest) {
               !queryHouseNumber ||
               normalizeHouseNumber(placesResult.resolvedHouseNumber) ===
                 normalizeHouseNumber(queryHouseNumber);
+            const placesMatchesStreet = resultSeemsToMatchStreet(
+              searchAddress,
+              placesResult.resolvedFormatted
+            );
 
-            if (placesWithinBounds && placesHouseNumberMatches) {
+            if (
+              placesWithinBounds &&
+              placesHouseNumberMatches &&
+              placesMatchesStreet
+            ) {
               attempt = {
                 lat: placesResult.lat,
                 lng: placesResult.lng,
@@ -174,10 +245,19 @@ export async function POST(req: NextRequest) {
             normalizeHouseNumber(attempt.resolvedHouseNumber)
           );
 
+        const exactHouseNumberMatch =
+          queryHouseNumber &&
+          attempt.resolvedHouseNumber &&
+          normalizeHouseNumber(queryHouseNumber) ===
+            normalizeHouseNumber(attempt.resolvedHouseNumber);
+
+        const acceptableLocationType =
+          isRooftop ||
+          attempt.locationType === "RANGE_INTERPOLATED" ||
+          (attempt.locationType === "GEOMETRIC_CENTER" && exactHouseNumberMatch);
+
         const verified =
-          finalHouseNumberMatches &&
-          withinBounds &&
-          (isRooftop || attempt.locationType === "RANGE_INTERPOLATED");
+          finalHouseNumberMatches && withinBounds && !!acceptableLocationType;
 
         console.log(
           `Bounds check for "${address}": lat=${attempt.lat}, lng=${attempt.lng}, withinBounds=${withinBounds}, usedPlacesFallback=${usedPlacesFallback}`
