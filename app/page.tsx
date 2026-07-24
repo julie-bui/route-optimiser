@@ -43,9 +43,8 @@ function isValidEmail(email: string): boolean {
 }
 
 function needsPropertyReview(property: Property): boolean {
-  const isManualProperty = property.agencies.length === 0;
   const hasValidRecipient =
-    !isManualProperty
+    property.agencies.length > 0
       ? property.agencies.every((_, agencyIndex) =>
           isValidEmail(property.selectedEmails?.[agencyIndex] || "")
         )
@@ -53,7 +52,6 @@ function needsPropertyReview(property: Property): boolean {
 
   return (
     !property.address ||
-    (!isManualProperty && !hasCompleteUKPostcodeClient(property.address)) ||
     Boolean(property.lowConfidenceMatch) ||
     !hasValidRecipient
   );
@@ -875,10 +873,10 @@ Spacepoint Team`);
                       {!p.address && (
                         <div className="text-red-500 text-xs mt-1">Address is missing</div>
                       )}
-                      {p.agencies.length > 0 &&
-                        p.address &&
-                        !hasCompleteUKPostcodeClient(p.address) && (
-                        <div className="text-red-500 text-xs mt-1">Postcode looks incomplete — needs the full code (e.g. EC4N 8AD, not just EC4)</div>
+                      {p.address && p.lowConfidenceMatch && (
+                        <div className="text-red-500 text-xs mt-1">
+                          This address couldn&apos;t be matched confidently — please check it or add more detail
+                        </div>
                       )}
                     </td>
                     <td className="p-2">

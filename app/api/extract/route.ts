@@ -86,10 +86,7 @@ async function extractOne(file: File, attempt = 1): Promise<any> {
       sourcePdfName: file.name,
       address: parsed.address,
       agencies: parsed.agencies || [],
-      needsReview:
-        !parsed.address ||
-        !hasAnyValidEmail ||
-        !hasCompleteUKPostcode(parsed.address),
+      needsReview: !parsed.address || !hasAnyValidEmail,
       error: null,
     };
   } catch (err: any) {
