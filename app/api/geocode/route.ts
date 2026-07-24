@@ -106,10 +106,16 @@ export async function POST(req: NextRequest) {
         let usedStrippedQuery = false;
         let streetQuery = searchAddress;
 
+        const attemptMatchesStreet = resultSeemsToMatchStreet(
+          searchAddress,
+          attempt.resolvedFormatted
+        );
+
         if (
-          (attempt.confidence === null ||
+          (!attemptMatchesStreet ||
+            attempt.confidence === null ||
             attempt.confidence < LOW_CONFIDENCE_THRESHOLD) &&
-          attempt.lat !== null
+          attempt.lat
         ) {
           // Strip from the original address: searchAddress may end with ", UK".
           const { strippedAddress, partialCode } =
