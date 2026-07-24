@@ -20,6 +20,7 @@ type Agency = {
 type Property = {
   sourcePdfName: string | null;
   address: string | null;
+  originalAddressText?: string | null;
   agencies: Agency[];
   selectedEmails: { [agencyIndex: number]: string };
   customEmailMode: { [agencyIndex: number]: boolean };
@@ -36,6 +37,22 @@ function hasCompleteUKPostcodeClient(address: string | null): boolean {
   const fullPostcodeRegex = /[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i;
   return fullPostcodeRegex.test(address);
 }
+
+function displayAddressWithoutPostcode(address: string): string {
+  return address.replace(/,?\s*[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\s*(,\s*(UK|United Kingdom))?\s*$/i, "").trim();
+}
+
+function generateFiveMinuteIntervals(): string[] {
+  const times: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 5) {
+      times.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  return times;
+}
+
+const FIVE_MINUTE_INTERVALS = generateFiveMinuteIntervals();
 
 function isValidEmail(email: string): boolean {
   if (!email) return false;
@@ -463,6 +480,7 @@ Spacepoint Team`);
         const isVerified =
           match?.verified === true || p.userConfirmedAddress === true;
         const isLowConfidence = !isVerified;
+        const originalAddressText = p.address;
         const resolvedAddress =
           isVerified && match?.resolvedFormatted
             ? match.resolvedFormatted
@@ -470,6 +488,7 @@ Spacepoint Team`);
         const updated = {
           ...p,
           address: resolvedAddress,
+          originalAddressText,
           lat: match?.lat ?? null,
           lng: match?.lng ?? null,
           geocodeError: match?.error ?? null,
@@ -884,7 +903,10 @@ Spacepoint Team`);
                         <div className="text-red-500 text-xs mt-1">{(p as any).error}</div>
                       )}
                     </td>
-                    <td className="p-2">
+                    <td className="p-2" style={{ verticalAlign: "top" }}>
+                      <label style={{ fontSize: 11, color: "#666", display: "block", marginBottom: 4 }}>
+                        Address
+                      </label>
                       <input
                         value={p.address ?? ""}
                         onChange={(e) => updateField(i, "address", e.target.value)}
@@ -915,7 +937,7 @@ Spacepoint Team`);
                         </div>
                       )}
                     </td>
-                    <td className="p-2">
+                    <td className="p-2" style={{ verticalAlign: "top" }}>
                       {p.agencies && p.agencies.length > 0 ? (
                         <>
                       {p.agencies.map((agency, agencyIdx) => (
@@ -1101,7 +1123,7 @@ Spacepoint Team`);
                               marginBottom: 4,
                             }}
                           >
-                            Who should receive the viewing request?
+                            Agent Email
                           </label>
                           <input
                             type="text"
@@ -1310,7 +1332,9 @@ Spacepoint Team`);
                 <option value="">Select a starting address</option>
                 {geocodedProperties.map((p, i) => (
                   <option key={i} value={i}>
-                    {p.address}
+                    {displayAddressWithoutPostcode(
+                      p.originalAddressText || p.address
+                    )}
                   </option>
                 ))}
               </select>
@@ -1329,12 +1353,24 @@ Spacepoint Team`);
 
             <label className="block mb-4">
               <span className="block text-sm font-medium mb-1">Start time</span>
-              <input
-                type="time"
+              <select
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="border rounded px-2 py-2 w-full"
-              />
+                style={{
+                  padding: "6px 8px",
+                  border: "1px solid #999",
+                  borderRadius: 4,
+                  background: "#fff",
+                  color: "#000",
+                }}
+              >
+                <option value="">Select a time</option>
+                {FIVE_MINUTE_INTERVALS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="block mb-6">

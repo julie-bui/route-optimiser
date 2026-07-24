@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const LONDON_BOUNDS = {
+  south: 51.2868,
+  west: -0.5103,
+  north: 51.6919,
+  east: 0.3340,
+};
+
+function isWithinLondonBounds(lat: number, lng: number): boolean {
+  return (
+    lat >= LONDON_BOUNDS.south &&
+    lat <= LONDON_BOUNDS.north &&
+    lng >= LONDON_BOUNDS.west &&
+    lng <= LONDON_BOUNDS.east
+  );
+}
+
 function extractQueryHouseNumber(address: string): string | null {
   const match = address.match(/^(\d+[a-zA-Z]?)/);
   return match ? match[1].toLowerCase() : null;
@@ -70,7 +86,10 @@ export async function POST(req: NextRequest) {
           queryHouseNumber === attempt.resolvedHouseNumber.toLowerCase();
 
         const isRooftop = attempt.locationType === "ROOFTOP";
-        const verified = houseNumberMatches && (isRooftop || attempt.locationType === "RANGE_INTERPOLATED");
+        const withinBounds = isWithinLondonBounds(attempt.lat, attempt.lng);
+        const verified = houseNumberMatches && withinBounds && (isRooftop || attempt.locationType === "RANGE_INTERPOLATED");
+
+        console.log(`Bounds check for "${address}": lat=${attempt.lat}, lng=${attempt.lng}, withinBounds=${withinBounds}`);
 
         return {
           address,
