@@ -897,7 +897,10 @@ Spacepoint Team`);
               <tbody>
                 {properties.map((p, i) => (
                   <tr key={i} className={p.needsReview ? "bg-red-50" : ""}>
-                    <td className="p-2 text-sm">
+                    <td className="p-2 text-sm" style={{ verticalAlign: "top" }}>
+                      <label style={{ fontSize: 11, color: "transparent", display: "block", marginBottom: 4 }}>
+                        File
+                      </label>
                       {p.sourcePdfName}
                       {(p as any).error && (
                         <div className="text-red-500 text-xs mt-1">{(p as any).error}</div>

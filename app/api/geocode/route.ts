@@ -17,8 +17,12 @@ function isWithinLondonBounds(lat: number, lng: number): boolean {
 }
 
 function extractQueryHouseNumber(address: string): string | null {
-  const match = address.match(/^(\d+[a-zA-Z]?)/);
-  return match ? match[1].toLowerCase() : null;
+  const match = address.match(/^(\d+[a-zA-Z]?(?:\s*[-–]\s*\d+[a-zA-Z]?)?)/);
+  return match ? match[1].toLowerCase().replace(/\s+/g, "") : null;
+}
+
+function normalizeHouseNumber(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, "").replace(/–/g, "-");
 }
 
 async function geocodeWithGoogle(queryAddress: string) {
@@ -80,10 +84,19 @@ export async function POST(req: NextRequest) {
         }
 
         const queryHouseNumber = extractQueryHouseNumber(address);
+        const normalizedQuery = queryHouseNumber
+          ? normalizeHouseNumber(queryHouseNumber)
+          : null;
+        const normalizedResolved = attempt.resolvedHouseNumber
+          ? normalizeHouseNumber(attempt.resolvedHouseNumber)
+          : null;
+
         const houseNumberMatches =
-          !queryHouseNumber ||
-          !attempt.resolvedHouseNumber ||
-          queryHouseNumber === attempt.resolvedHouseNumber.toLowerCase();
+          !normalizedQuery ||
+          !normalizedResolved ||
+          normalizedQuery === normalizedResolved ||
+          normalizedResolved.includes(normalizedQuery) ||
+          normalizedQuery.includes(normalizedResolved);
 
         const isRooftop = attempt.locationType === "ROOFTOP";
         const withinBounds = isWithinLondonBounds(attempt.lat, attempt.lng);
