@@ -57,6 +57,46 @@ async function geocodeWithGoogle(queryAddress: string) {
   };
 }
 
+async function geocodeWithPlacesAPI(queryAddress: string) {
+  const url = `https://places.googleapis.com/v1/places:searchText`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": process.env.GOOGLE_MAPS_API_KEY || "",
+      "X-Goog-FieldMask": "places.formattedAddress,places.location,places.addressComponents",
+    },
+    body: JSON.stringify({
+      textQuery: queryAddress,
+      locationBias: {
+        rectangle: {
+          low: { latitude: LONDON_BOUNDS.south, longitude: LONDON_BOUNDS.west },
+          high: { latitude: LONDON_BOUNDS.north, longitude: LONDON_BOUNDS.east },
+        },
+      },
+    }),
+  });
+
+  const data = await res.json();
+  const place = data.places?.[0];
+
+  if (!place) {
+    return { lat: null, lng: null, resolvedFormatted: null, resolvedHouseNumber: null };
+  }
+
+  const houseNumberComponent = place.addressComponents?.find((c: any) =>
+    c.types?.includes("street_number")
+  );
+
+  return {
+    lat: place.location?.latitude ?? null,
+    lng: place.location?.longitude ?? null,
+    resolvedFormatted: place.formattedAddress || null,
+    resolvedHouseNumber: houseNumberComponent?.longText || null,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const { addresses } = await req.json();
 
@@ -72,7 +112,7 @@ export async function POST(req: NextRequest) {
         : `${addressForSearch}, UK`;
 
       try {
-        const attempt = await geocodeWithGoogle(searchAddress);
+        let attempt = await geocodeWithGoogle(searchAddress);
 
         console.log(
           `Geocode for "${address}": resolved=${attempt.resolvedFormatted}, locationType=${attempt.locationType}, houseNumber=${attempt.resolvedHouseNumber}`
@@ -89,25 +129,59 @@ export async function POST(req: NextRequest) {
         }
 
         const queryHouseNumber = extractQueryHouseNumber(address);
-        const normalizedQuery = queryHouseNumber
-          ? normalizeHouseNumber(queryHouseNumber)
-          : null;
-        const normalizedResolved = attempt.resolvedHouseNumber
-          ? normalizeHouseNumber(attempt.resolvedHouseNumber)
-          : null;
 
-        const houseNumberMatches =
-          !normalizedQuery ||
-          !normalizedResolved ||
-          normalizedQuery === normalizedResolved ||
-          normalizedResolved.includes(normalizedQuery) ||
-          normalizedQuery.includes(normalizedResolved);
+        let isRooftop = attempt.locationType === "ROOFTOP";
+        let withinBounds = isWithinLondonBounds(attempt.lat, attempt.lng);
+        let usedPlacesFallback = false;
 
-        const isRooftop = attempt.locationType === "ROOFTOP";
-        const withinBounds = isWithinLondonBounds(attempt.lat, attempt.lng);
-        const verified = houseNumberMatches && withinBounds && (isRooftop || attempt.locationType === "RANGE_INTERPOLATED");
+        if (!attempt.resolvedHouseNumber && attempt.lat) {
+          const placesResult = await geocodeWithPlacesAPI(searchAddress);
 
-        console.log(`Bounds check for "${address}": lat=${attempt.lat}, lng=${attempt.lng}, withinBounds=${withinBounds}`);
+          if (placesResult.lat && placesResult.resolvedHouseNumber) {
+            const placesWithinBounds = isWithinLondonBounds(
+              placesResult.lat,
+              placesResult.lng!
+            );
+            const placesHouseNumberMatches =
+              !queryHouseNumber ||
+              normalizeHouseNumber(placesResult.resolvedHouseNumber) ===
+                normalizeHouseNumber(queryHouseNumber);
+
+            if (placesWithinBounds && placesHouseNumberMatches) {
+              attempt = {
+                lat: placesResult.lat,
+                lng: placesResult.lng,
+                resolvedFormatted: placesResult.resolvedFormatted,
+                resolvedHouseNumber: placesResult.resolvedHouseNumber,
+                locationType: "ROOFTOP",
+              };
+              isRooftop = true;
+              withinBounds = true;
+              usedPlacesFallback = true;
+            }
+          }
+        }
+
+        const finalHouseNumberMatches =
+          !queryHouseNumber ||
+          !attempt.resolvedHouseNumber ||
+          normalizeHouseNumber(queryHouseNumber) ===
+            normalizeHouseNumber(attempt.resolvedHouseNumber) ||
+          normalizeHouseNumber(attempt.resolvedHouseNumber).includes(
+            normalizeHouseNumber(queryHouseNumber)
+          ) ||
+          normalizeHouseNumber(queryHouseNumber).includes(
+            normalizeHouseNumber(attempt.resolvedHouseNumber)
+          );
+
+        const verified =
+          finalHouseNumberMatches &&
+          withinBounds &&
+          (isRooftop || attempt.locationType === "RANGE_INTERPOLATED");
+
+        console.log(
+          `Bounds check for "${address}": lat=${attempt.lat}, lng=${attempt.lng}, withinBounds=${withinBounds}, usedPlacesFallback=${usedPlacesFallback}`
+        );
 
         return {
           address,
