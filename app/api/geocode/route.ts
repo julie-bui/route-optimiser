@@ -62,9 +62,14 @@ export async function POST(req: NextRequest) {
 
   const results = await Promise.all(
     addresses.map(async (address: string) => {
-      const searchAddress = address.toLowerCase().includes("uk") || address.toLowerCase().includes("united kingdom")
-        ? address
-        : `${address}, UK`;
+      const addressLower = address.toLowerCase();
+      const mentionsLondon = addressLower.includes("london");
+
+      const addressForSearch = mentionsLondon ? address : `${address}, London`;
+
+      const searchAddress = addressForSearch.toLowerCase().includes("uk") || addressForSearch.toLowerCase().includes("united kingdom")
+        ? addressForSearch
+        : `${addressForSearch}, UK`;
 
       try {
         const attempt = await geocodeWithGoogle(searchAddress);
