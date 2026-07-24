@@ -1,114 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 
-function extractTrailingPartialPostcode(address: string): {
-  strippedAddress: string;
-  partialCode: string | null;
-} {
-  const withoutCountry = address
-    .replace(/,\s*(UK|United Kingdom)\s*$/i, "")
-    .trim();
-  const match = withoutCountry.match(/,?\s*([A-Z]{1,2}\d[A-Z\d]?)\s*$/i);
-  if (match) {
-    const partialCode = match[1].toUpperCase();
-    const strippedAddress = withoutCountry
-      .slice(0, match.index ?? withoutCountry.length)
-      .trim()
-      .replace(/,$/, "");
-    return { strippedAddress, partialCode };
-  }
-
-  return { strippedAddress: address, partialCode: null };
-}
-
-function resultSeemsToMatchStreet(
-  queryAddress: string,
-  resolvedFormatted: string | null
-): boolean {
-  if (!resolvedFormatted) return false;
-
-  const ignoredTokens = new Set([
-    "the",
-    "and",
-    "road",
-    "street",
-    "lane",
-    "avenue",
-    "place",
-    "square",
-    "court",
-    "way",
-    "drive",
-    "close",
-    "london",
-    "uk",
-    "united",
-    "kingdom",
-    "england",
-  ]);
-  const tokensFor = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .split(" ")
-      .filter(
-        (token) =>
-          token.length > 2 &&
-          !ignoredTokens.has(token) &&
-          !/^[a-z]{1,2}\d[a-z\d]?$/.test(token) &&
-          !/^\d+$/.test(token)
-      );
-
-  const queryTokens = tokensFor(queryAddress);
-  const resolvedTokens = new Set(tokensFor(resolvedFormatted));
-  return queryTokens.some((token) => resolvedTokens.has(token));
-}
-
-function extractQueryHouseNumberStandalone(address: string): string | null {
+function extractQueryHouseNumber(address: string): string | null {
   const match = address.match(/^(\d+[a-zA-Z]?)/);
   return match ? match[1].toLowerCase() : null;
 }
 
-async function geocodeOnce(queryAddress: string) {
-  const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(
+async function geocodeWithGoogle(queryAddress: string) {
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
     queryAddress
-  )}&key=${process.env.OPENCAGE_API_KEY}&limit=5&no_annotations=1&countrycode=gb&bounds=-0.5103,51.2868,0.3340,51.6919`;
+  )}&key=${process.env.GOOGLE_MAPS_API_KEY}&components=country:GB&bounds=51.2868,-0.5103|51.6919,0.3340`;
 
   const res = await fetch(url);
   const data = await res.json();
 
-  if (data.status.code !== 200 || !data.results || data.results.length === 0) {
+  if (data.status !== "OK" || !data.results[0]) {
     return {
       lat: null,
       lng: null,
-      confidence: null,
       resolvedFormatted: null,
-      resolvedPostcode: null,
       resolvedHouseNumber: null,
-      resolvedType: null,
+      locationType: null,
     };
   }
 
-  const queryHouseNumber = extractQueryHouseNumberStandalone(queryAddress);
-
-  let chosen = data.results[0];
-  if (queryHouseNumber) {
-    const exactMatch = data.results.find(
-      (r: { components?: { house_number?: string } }) =>
-        r.components?.house_number?.toLowerCase() === queryHouseNumber
-    );
-    if (exactMatch) {
-      chosen = exactMatch;
-    }
-  }
+  const result = data.results[0];
+  const houseNumberComponent = result.address_components?.find((c: any) =>
+    c.types.includes("street_number")
+  );
 
   return {
-    lat: chosen.geometry.lat,
-    lng: chosen.geometry.lng,
-    confidence: chosen.confidence ?? null,
-    resolvedFormatted: chosen.formatted || null,
-    resolvedPostcode: chosen.components?.postcode || null,
-    resolvedHouseNumber: chosen.components?.house_number || null,
-    resolvedType: chosen.components?._type || null,
+    lat: result.geometry.location.lat,
+    lng: result.geometry.location.lng,
+    resolvedFormatted: result.formatted_address || null,
+    resolvedHouseNumber: houseNumberComponent?.long_name || null,
+    locationType: result.geometry.location_type || null,
   };
 }
 
@@ -122,56 +47,10 @@ export async function POST(req: NextRequest) {
         : `${address}, UK`;
 
       try {
-        const LOW_CONFIDENCE_THRESHOLD = 6;
-        let attempt = await geocodeOnce(searchAddress);
-        let usedStrippedQuery = false;
-        let streetQuery = searchAddress;
-
-        const attemptMatchesStreet = resultSeemsToMatchStreet(
-          searchAddress,
-          attempt.resolvedFormatted
-        );
-
-        if (
-          (!attemptMatchesStreet ||
-            attempt.confidence === null ||
-            attempt.confidence < LOW_CONFIDENCE_THRESHOLD) &&
-          attempt.lat
-        ) {
-          // Strip from the original address: searchAddress may end with ", UK".
-          const { strippedAddress, partialCode } =
-            extractTrailingPartialPostcode(address);
-
-          if (partialCode && strippedAddress !== address) {
-            const strippedSearchAddress =
-              strippedAddress.toLowerCase().includes("uk") ||
-              strippedAddress.toLowerCase().includes("united kingdom")
-                ? strippedAddress
-                : `${strippedAddress}, UK`;
-            const retryAttempt = await geocodeOnce(strippedSearchAddress);
-
-            if (
-              retryAttempt.lat !== null &&
-              retryAttempt.confidence !== null &&
-              retryAttempt.confidence >= LOW_CONFIDENCE_THRESHOLD
-            ) {
-              const resolvedPostcodeStart = retryAttempt.resolvedPostcode
-                ?.toUpperCase()
-                .replace(/\s/g, "")
-                .slice(0, partialCode.length);
-              const partialCodeNormalized = partialCode.replace(/\s/g, "");
-
-              if (resolvedPostcodeStart === partialCodeNormalized) {
-                attempt = retryAttempt;
-                usedStrippedQuery = true;
-                streetQuery = strippedAddress;
-              }
-            }
-          }
-        }
+        const attempt = await geocodeWithGoogle(searchAddress);
 
         console.log(
-          `Geocode for "${address}": confidence=${attempt.confidence}, usedStrippedQuery=${usedStrippedQuery}, resolved=${attempt.resolvedFormatted}`
+          `Geocode for "${address}": resolved=${attempt.resolvedFormatted}, locationType=${attempt.locationType}, houseNumber=${attempt.resolvedHouseNumber}`
         );
 
         if (attempt.lat === null || attempt.lng === null) {
@@ -179,38 +58,33 @@ export async function POST(req: NextRequest) {
             address,
             lat: null,
             lng: null,
-            confidence: null,
             verified: false,
             error: "Geocoding failed: no match found",
           };
         }
 
-        const finalMatchesStreet = resultSeemsToMatchStreet(
-          streetQuery,
-          attempt.resolvedFormatted
-        );
-        const verified =
-          finalMatchesStreet &&
-          (attempt.confidence === null ||
-            attempt.confidence >= LOW_CONFIDENCE_THRESHOLD ||
-            usedStrippedQuery);
+        const queryHouseNumber = extractQueryHouseNumber(address);
+        const houseNumberMatches =
+          !queryHouseNumber ||
+          !attempt.resolvedHouseNumber ||
+          queryHouseNumber === attempt.resolvedHouseNumber.toLowerCase();
+
+        const isRooftop = attempt.locationType === "ROOFTOP";
+        const verified = houseNumberMatches && (isRooftop || attempt.locationType === "RANGE_INTERPOLATED");
 
         return {
           address,
           lat: attempt.lat,
           lng: attempt.lng,
-          confidence: attempt.confidence,
           resolvedFormatted: attempt.resolvedFormatted,
           verified,
           error: null,
         };
-      } catch {
+      } catch (err: any) {
         return {
           address,
           lat: null,
           lng: null,
-          confidence: null,
-          resolvedFormatted: null,
           verified: false,
           error: "Geocoding request failed",
         };
