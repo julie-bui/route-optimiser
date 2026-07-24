@@ -441,6 +441,7 @@ Spacepoint Team`);
           lng: number | null;
           confidence: number | null;
           resolvedFormatted: string | null;
+          verified: boolean;
           error: string | null;
         }
       >(
@@ -451,6 +452,7 @@ Spacepoint Team`);
             lng: r.lng,
             confidence: r.confidence ?? null,
             resolvedFormatted: r.resolvedFormatted ?? null,
+            verified: r.verified === true,
             error: r.error,
           },
         ])
@@ -458,11 +460,11 @@ Spacepoint Team`);
 
       const merged = properties.map((p) => {
         const match = geocodeLookup.get(p.address ?? "");
-        const confidence = match?.confidence ?? null;
-        const isLowConfidence =
-          confidence !== null && confidence < 8 && !p.userConfirmedAddress;
+        const isVerified =
+          match?.verified === true || p.userConfirmedAddress === true;
+        const isLowConfidence = !isVerified;
         const resolvedAddress =
-          confidence !== null && confidence >= 8 && match?.resolvedFormatted
+          isVerified && match?.resolvedFormatted
             ? match.resolvedFormatted
             : p.address;
         const updated = {

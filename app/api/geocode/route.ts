@@ -17,6 +17,49 @@ function extractTrailingPartialPostcode(address: string): {
   return { strippedAddress: address, partialCode: null };
 }
 
+function resultSeemsToMatchStreet(
+  queryAddress: string,
+  resolvedFormatted: string | null
+): boolean {
+  if (!resolvedFormatted) return false;
+
+  const ignoredTokens = new Set([
+    "the",
+    "and",
+    "road",
+    "street",
+    "lane",
+    "avenue",
+    "place",
+    "square",
+    "court",
+    "way",
+    "drive",
+    "close",
+    "london",
+    "uk",
+    "united",
+    "kingdom",
+    "england",
+  ]);
+  const tokensFor = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter(
+        (token) =>
+          token.length > 2 &&
+          !ignoredTokens.has(token) &&
+          !/^[a-z]{1,2}\d[a-z\d]?$/.test(token) &&
+          !/^\d+$/.test(token)
+      );
+
+  const queryTokens = tokensFor(queryAddress);
+  const resolvedTokens = new Set(tokensFor(resolvedFormatted));
+  return queryTokens.some((token) => resolvedTokens.has(token));
+}
+
 async function geocodeOnce(queryAddress: string) {
   const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(
     queryAddress
@@ -58,6 +101,7 @@ export async function POST(req: NextRequest) {
         const LOW_CONFIDENCE_THRESHOLD = 6;
         let attempt = await geocodeOnce(searchAddress);
         let usedStrippedQuery = false;
+        let streetQuery = searchAddress;
 
         if (
           (attempt.confidence === null ||
@@ -90,6 +134,7 @@ export async function POST(req: NextRequest) {
               if (resolvedPostcodeStart === partialCodeNormalized) {
                 attempt = retryAttempt;
                 usedStrippedQuery = true;
+                streetQuery = strippedAddress;
               }
             }
           }
@@ -105,9 +150,20 @@ export async function POST(req: NextRequest) {
             lat: null,
             lng: null,
             confidence: null,
+            verified: false,
             error: "Geocoding failed: no match found",
           };
         }
+
+        const finalMatchesStreet = resultSeemsToMatchStreet(
+          streetQuery,
+          attempt.resolvedFormatted
+        );
+        const verified =
+          finalMatchesStreet &&
+          (attempt.confidence === null ||
+            attempt.confidence >= LOW_CONFIDENCE_THRESHOLD ||
+            usedStrippedQuery);
 
         return {
           address,
@@ -115,6 +171,7 @@ export async function POST(req: NextRequest) {
           lng: attempt.lng,
           confidence: attempt.confidence,
           resolvedFormatted: attempt.resolvedFormatted,
+          verified,
           error: null,
         };
       } catch {
@@ -124,6 +181,7 @@ export async function POST(req: NextRequest) {
           lng: null,
           confidence: null,
           resolvedFormatted: null,
+          verified: false,
           error: "Geocoding request failed",
         };
       }
