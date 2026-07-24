@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Route Optimiser
 
-## Getting Started
+A Next.js application for planning property-viewing tours in London. Upload brochure PDFs or paste addresses, choose viewing contacts, optimise the visit order, and send viewing requests or schedules by email.
 
-First, run the development server:
+## Features
+
+- Extracts addresses and agency contacts from PDFs with Gemini.
+- Geocodes addresses with OpenCage, constrained to Greater London.
+- Flags low-confidence address matches for review or manual confirmation.
+- Plans tours by public transport, walking, cycling, car, or taxi.
+- Displays route maps, transit stops, leg details, and rounded arrival/travel times.
+- Sends personalised viewing requests through Resend.
+- Downloads or emails an Excel/plain-text tour schedule.
+
+## Setup
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Create `.env.local` with the required API credentials:
+
+```bash
+GEMINI_API_KEY=
+OPENCAGE_API_KEY=
+TFL_API_KEY=
+LOCATIONIQ_ACCESS_TOKEN=
+TOMTOM_API_KEY=
+RESEND_API_KEY=
+```
+
+Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Contact directory
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The optional contact search reads from `public/society-contacts.json`. Each entry must include:
 
-## Learn More
+```json
+{
+  "name": "Example Contact",
+  "company": "Example Company",
+  "email": "contact@example.com"
+}
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Workflow
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Upload PDF brochures or paste addresses.
+2. Select agency contacts or enter a recipient for manual addresses.
+3. Review any geocoding matches that need attention.
+4. Set the tour start point, date, time, and travel mode.
+5. Review the itinerary, adjust viewing durations, and download or email the schedule.
+6. Confirm and send viewing requests.
