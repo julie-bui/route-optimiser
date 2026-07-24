@@ -4,11 +4,14 @@ function extractTrailingPartialPostcode(address: string): {
   strippedAddress: string;
   partialCode: string | null;
 } {
-  const match = address.match(/,?\s*([A-Z]{1,2}\d[A-Z\d]?)\s*$/i);
+  const withoutCountry = address
+    .replace(/,\s*(UK|United Kingdom)\s*$/i, "")
+    .trim();
+  const match = withoutCountry.match(/,?\s*([A-Z]{1,2}\d[A-Z\d]?)\s*$/i);
   if (match) {
     const partialCode = match[1].toUpperCase();
-    const strippedAddress = address
-      .slice(0, match.index ?? address.length)
+    const strippedAddress = withoutCountry
+      .slice(0, match.index ?? withoutCountry.length)
       .trim()
       .replace(/,$/, "");
     return { strippedAddress, partialCode };
