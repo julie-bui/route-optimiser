@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
         const { data, error } = await resend.emails.send({
           from: "Spacepoint <viewings@spre.agency>",
           to: recipientEmail,
-          replyTo: "juliehamibui@outlook.com",
+          replyTo: ["lthomasson@spacepoint.co.uk", "moneill@spacepoint.co.uk"],
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
           subject: filledSubject,
           text: filledBody,
