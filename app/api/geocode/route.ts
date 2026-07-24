@@ -63,31 +63,52 @@ function resultSeemsToMatchStreet(
   return queryTokens.some((token) => resolvedTokens.has(token));
 }
 
+function extractQueryHouseNumberStandalone(address: string): string | null {
+  const match = address.match(/^(\d+[a-zA-Z]?)/);
+  return match ? match[1].toLowerCase() : null;
+}
+
 async function geocodeOnce(queryAddress: string) {
   const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(
     queryAddress
-  )}&key=${process.env.OPENCAGE_API_KEY}&limit=1&no_annotations=1&countrycode=gb&bounds=-0.5103,51.2868,0.3340,51.6919`;
+  )}&key=${process.env.OPENCAGE_API_KEY}&limit=5&no_annotations=1&countrycode=gb&bounds=-0.5103,51.2868,0.3340,51.6919`;
 
   const res = await fetch(url);
   const data = await res.json();
 
-  if (data.status.code !== 200 || !data.results[0]) {
+  if (data.status.code !== 200 || !data.results || data.results.length === 0) {
     return {
       lat: null,
       lng: null,
       confidence: null,
       resolvedFormatted: null,
       resolvedPostcode: null,
+      resolvedHouseNumber: null,
+      resolvedType: null,
     };
   }
 
-  const result = data.results[0];
+  const queryHouseNumber = extractQueryHouseNumberStandalone(queryAddress);
+
+  let chosen = data.results[0];
+  if (queryHouseNumber) {
+    const exactMatch = data.results.find(
+      (r: { components?: { house_number?: string } }) =>
+        r.components?.house_number?.toLowerCase() === queryHouseNumber
+    );
+    if (exactMatch) {
+      chosen = exactMatch;
+    }
+  }
+
   return {
-    lat: result.geometry.lat,
-    lng: result.geometry.lng,
-    confidence: result.confidence ?? null,
-    resolvedFormatted: result.formatted || null,
-    resolvedPostcode: result.components?.postcode || null,
+    lat: chosen.geometry.lat,
+    lng: chosen.geometry.lng,
+    confidence: chosen.confidence ?? null,
+    resolvedFormatted: chosen.formatted || null,
+    resolvedPostcode: chosen.components?.postcode || null,
+    resolvedHouseNumber: chosen.components?.house_number || null,
+    resolvedType: chosen.components?._type || null,
   };
 }
 
