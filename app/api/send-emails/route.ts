@@ -18,8 +18,28 @@ function formatTime(arrivalTimeIso: string): string {
   return formatRoundedTime(arrivalTimeIso);
 }
 
+function fillTemplate(
+  template: string,
+  values: { [key: string]: string }
+): string {
+  let result = template;
+  for (const [key, value] of Object.entries(values)) {
+    result = result.split(`{${key}}`).join(value);
+  }
+  return result;
+}
+
+const DEFAULT_SUBJECT = "Viewing request - {address}";
+const DEFAULT_BODY = `Dear {name},
+
+I'd like to arrange a viewing of {address} on {date} at {time}.
+
+Thank you,
+Spacepoint Team`;
+
 export async function POST(req: NextRequest) {
-  const { stops, tourDate, ccEmails } = await req.json();
+  const { stops, tourDate, ccEmails, emailSubject, emailBody } =
+    await req.json();
 
   const results = [];
   const validCcEmails = Array.isArray(ccEmails)
@@ -70,6 +90,18 @@ export async function POST(req: NextRequest) {
         typeof recipient.name === "string" && recipient.name.trim().length > 0
           ? recipient.name.trim().split(" ")[0]
           : "Agent";
+      const filledSubject = fillTemplate(emailSubject || DEFAULT_SUBJECT, {
+        address: stop.address,
+        name: greetingName,
+        date: dateFormatted,
+        time: viewingTime,
+      });
+      const filledBody = fillTemplate(emailBody || DEFAULT_BODY, {
+        address: stop.address,
+        name: greetingName,
+        date: dateFormatted,
+        time: viewingTime,
+      });
 
       try {
         const { data, error } = await resend.emails.send({
@@ -77,16 +109,8 @@ export async function POST(req: NextRequest) {
           to: recipientEmail,
           replyTo: "juliehamibui@outlook.com",
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
-          subject: `Viewing request - ${stop.address}`,
-          text: `Dear ${greetingName},
-
-I'd like to arrange a viewing of ${stop.address} on ${dateFormatted} at ${viewingTime}.
-
-Could you confirm whether this time works, or suggest an alternative?
-
-Thank you,
-Mark and Laurie
-`,
+          subject: filledSubject,
+          text: filledBody,
         });
 
         if (error) {
