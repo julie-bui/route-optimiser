@@ -1588,10 +1588,15 @@ Spacepoint Team`);
                           {i + 1}
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
-                          {arrivalTime}{" "}
-                          <span style={{ color: "#999" }}>
-                            ({formatRoundedTime(arrivals[i].toISOString())} rounded up 5 min)
-                          </span>
+                          {arrivalTime}
+                          {i > 0 && (
+                            <>
+                              {" "}
+                              <span style={{ color: "#999" }}>
+                                ({formatRoundedTime(arrivals[i].toISOString())} rounded up 5 min)
+                              </span>
+                            </>
+                          )}
                         </p>
                         <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
                           {stop.address}
