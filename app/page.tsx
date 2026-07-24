@@ -98,6 +98,15 @@ export default function Home() {
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
   const [ccEmails, setCcEmails] = useState<string[]>([""]);
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
+  const [emailSubject, setEmailSubject] = useState(
+    "Viewing request - {address}"
+  );
+  const [emailBody, setEmailBody] = useState(`Dear {name},
+
+I'd like to arrange a viewing of {address} on {date} at {time}.
+
+Thank you,
+Spacepoint Team`);
   const [scheduleEmailAddress, setScheduleEmailAddress] = useState("");
   const [scheduleEmailSending, setScheduleEmailSending] = useState(false);
   const [scheduleEmailResult, setScheduleEmailResult] = useState<string | null>(
@@ -663,6 +672,8 @@ export default function Home() {
           stops: routeResult.stops,
           tourDate,
           ccEmails: filledCcEmails.length > 0 ? filledCcEmails : undefined,
+          emailSubject,
+          emailBody,
         }),
       });
 
@@ -1668,6 +1679,61 @@ export default function Home() {
                     ? ""
                     : "s"}
                 </p>
+                <div style={{ marginBottom: 16 }}>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "#666",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    style={{
+                      width: "100%",
+                      marginBottom: 10,
+                      padding: "6px 8px",
+                      border: "1px solid #999",
+                      borderRadius: 4,
+                      background: "#fff",
+                      color: "#000",
+                    }}
+                  />
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "#666",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Message
+                  </label>
+                  <textarea
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    rows={7}
+                    style={{
+                      width: "100%",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      padding: 8,
+                      border: "1px solid #999",
+                      borderRadius: 4,
+                      background: "#fff",
+                      color: "#000",
+                    }}
+                  />
+                  <p style={{ fontSize: 11, color: "#999", margin: "6px 0 0" }}>
+                    Placeholders like {"{name}"}, {"{address}"}, {"{date}"}, and{" "}
+                    {"{time}"} fill in automatically per recipient
+                  </p>
+                </div>
                 <p style={{ fontSize: 13, color: "#666", margin: "0 0 14px" }}>
                   Review the recipients below before sending.
                 </p>
