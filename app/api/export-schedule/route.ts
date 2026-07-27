@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
             roundUpMinutesToFive(travelMinutes)
           );
 
+    console.log(`DEBUG stop "${stop.address}" recipients (${(stop.recipients || []).length}):`, JSON.stringify(stop.recipients));
+
     const agentNames = (stop.recipients || [])
       .map((r: any) => r.name)
       .filter(Boolean)

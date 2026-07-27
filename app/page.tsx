@@ -138,6 +138,7 @@ export default function Home() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [reorderingMessage, setReorderingMessage] = useState<string | null>(null);
   const [reorderingStopIndex, setReorderingStopIndex] = useState<number | null>(null);
+  const [durationRecalculatingIndex, setDurationRecalculatingIndex] = useState<number | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
@@ -747,6 +748,7 @@ Spacepoint Team`);
     } finally {
       if (thisRequestId === recalculateRequestIdRef.current) {
         setRouteLoading(false);
+        setDurationRecalculatingIndex(null);
       }
     }
   }
@@ -1917,7 +1919,7 @@ Spacepoint Team`);
                             </button>
                           )}
                           {reorderingStopIndex === i && (
-                            <p style={{ fontSize: 11, color: "#185FA5", marginTop: 4, whiteSpace: "nowrap" }}>
+                            <p style={{ fontSize: 16, fontWeight: 500, color: "#185FA5", marginTop: 6, marginBottom: 6, whiteSpace: "nowrap" }}>
                               Recalculating…
                             </p>
                           )}
@@ -1989,6 +1991,7 @@ Spacepoint Team`);
                                 if (recalculateTimeoutRef.current) {
                                   clearTimeout(recalculateTimeoutRef.current);
                                 }
+                                setDurationRecalculatingIndex(i);
                                 recalculateTimeoutRef.current = setTimeout(
                                   () => {
                                     void handleRecalculateClick(i).catch(
@@ -2026,6 +2029,7 @@ Spacepoint Team`);
                                 if (recalculateTimeoutRef.current) {
                                   clearTimeout(recalculateTimeoutRef.current);
                                 }
+                                setDurationRecalculatingIndex(i);
                                 void handleRecalculateClick(i).catch(() => {});
                                 e.currentTarget.blur();
                               }
@@ -2042,6 +2046,11 @@ Spacepoint Team`);
                             }}
                           />
                           <span>min viewing</span>
+                          {durationRecalculatingIndex === i && (
+                            <span style={{ fontSize: 16, fontWeight: 500, color: "#185FA5", marginLeft: 8 }}>
+                              Recalculating…
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
