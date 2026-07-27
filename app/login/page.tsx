@@ -50,6 +50,9 @@ export default function LoginPage() {
           Sign in
         </button>
       </form>
+      <p style={{ fontSize: 13, marginTop: 12, textAlign: "center" }}>
+        <a href="/forgot-password" style={{ color: "#666" }}>Forgot password?</a>
+      </p>
     </main>
   );
 }
