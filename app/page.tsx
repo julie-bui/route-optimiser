@@ -603,6 +603,7 @@ Spacepoint Team`);
                   return {
                     email,
                     name: matchedContact?.name || null,
+                    phone: matchedContact?.phone || null,
                   };
                 })
             : isValidEmail(property.manualRecipientEmail || "")
@@ -610,6 +611,7 @@ Spacepoint Team`);
                   {
                     email: property.manualRecipientEmail,
                     name: property.manualRecipientName || null,
+                    phone: null,
                   },
                 ]
               : [];
@@ -618,6 +620,7 @@ Spacepoint Team`);
         ).map((recipient) => ({
           email: recipient.email,
           name: recipient.name,
+          phone: null,
         }));
         const allRecipients = [...recipients, ...extraRecipients];
 
