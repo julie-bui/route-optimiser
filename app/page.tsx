@@ -158,7 +158,6 @@ I'd like to arrange a viewing of {address} on {date} at {time}.
 
 Thank you,
 Spacepoint Team`);
-  const [scheduleEmailAddress, setScheduleEmailAddress] = useState("");
   const [scheduleEmailSending, setScheduleEmailSending] = useState(false);
   const [scheduleEmailResult, setScheduleEmailResult] = useState<string | null>(
     null
@@ -868,9 +867,11 @@ Spacepoint Team`);
   }
 
   async function handleEmailSchedule() {
-    if (!scheduleEmailAddress || !isValidEmail(scheduleEmailAddress)) {
-      setScheduleEmailResult("Please enter a valid email address");
-      throw new Error("Please enter a valid email address");
+    const recipientEmail = session?.user?.email;
+
+    if (!recipientEmail) {
+      setScheduleEmailResult("You must be signed in to email yourself the schedule");
+      throw new Error("Not signed in");
     }
 
     setScheduleEmailSending(true);
@@ -882,7 +883,7 @@ Spacepoint Team`);
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stops: routeResult.stops,
-          recipientEmail: scheduleEmailAddress,
+          recipientEmail: recipientEmail,
           tourDate,
         }),
       });
@@ -892,7 +893,7 @@ Spacepoint Team`);
         setScheduleEmailResult(`Failed: ${data.error || "Unknown error"}`);
         throw new Error(data.error || "Unknown error");
       } else {
-        setScheduleEmailResult(`Sent to ${scheduleEmailAddress}`);
+        setScheduleEmailResult(`Sent to ${recipientEmail}`);
       }
     } catch (err: any) {
       const message = err?.message || "Unknown error";
@@ -2173,21 +2174,6 @@ Spacepoint Team`);
                     ? "✓ Downloaded"
                     : "Download schedule"}
               </button>
-              <input
-                type="email"
-                value={scheduleEmailAddress}
-                onChange={(e) => setScheduleEmailAddress(e.target.value)}
-                placeholder="email@example.com"
-                style={{
-                  marginLeft: 8,
-                  padding: "6px 8px",
-                  border: "1px solid #999",
-                  borderRadius: 4,
-                  background: "#fff",
-                  color: "#000",
-                  fontSize: 13,
-                }}
-              />
               <button
                 onClick={() => {
                   void emailScheduleButtonState
@@ -2199,23 +2185,27 @@ Spacepoint Team`);
                   emailScheduleButtonState.state === "loading"
                 }
                 style={{
-                  marginLeft: 4,
+                  padding: "8px 14px",
+                  border: "1px solid #999",
+                  borderRadius: 4,
+                  background: "#fff",
+                  cursor: "pointer",
                   opacity: emailScheduleButtonState.state === "loading" ? 0.6 : 1,
                   borderColor:
                     emailScheduleButtonState.state === "success"
-                      ? "var(--border-success, #0f6e56)"
-                      : undefined,
+                      ? "#0f6e56"
+                      : "#999",
                   color:
                     emailScheduleButtonState.state === "success"
-                      ? "var(--text-success, #0f6e56)"
-                      : undefined,
+                      ? "#0f6e56"
+                      : "#000",
                 }}
               >
                 {emailScheduleButtonState.state === "loading"
                   ? "Sending..."
                   : emailScheduleButtonState.state === "success"
-                    ? "✓ Sent"
-                    : "Email schedule"}
+                    ? "✓ Sent to your email"
+                    : "Email me schedule"}
               </button>
               {scheduleEmailResult && (
                 <span
