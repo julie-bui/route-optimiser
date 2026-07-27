@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
+import { keepOnlyMobileNumber } from "@/app/lib/phoneFilter";
 import {
   roundUpMinutesToFive,
   roundUpToFiveMinutes,
@@ -73,14 +74,12 @@ export async function POST(req: NextRequest) {
             roundUpMinutesToFive(travelMinutes)
           );
 
-    console.log(`Stop "${stop.address}" recipients:`, JSON.stringify(stop.recipients));
-
     const agentNames = (stop.recipients || [])
       .map((r: any) => r.name)
       .filter(Boolean)
       .join(", ");
     const agentPhones = (stop.recipients || [])
-      .map((r: any) => r.phone)
+      .map((r: any) => keepOnlyMobileNumber(r.phone))
       .filter(Boolean)
       .join(", ");
 

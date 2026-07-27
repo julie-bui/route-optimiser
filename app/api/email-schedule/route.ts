@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { keepOnlyMobileNumber } from "@/app/lib/phoneFilter";
 import {
   formatRoundedTime,
   roundUpMinutesToFive,
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join(", ") || "N/A";
     const agentPhones = (stop.recipients || [])
-      .map((r: any) => r.phone)
+      .map((r: any) => keepOnlyMobileNumber(r.phone))
       .filter(Boolean)
       .join(", ") || "N/A";
 

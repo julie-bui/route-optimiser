@@ -27,6 +27,7 @@ type Property = {
   manualRecipientSearch?: string;
   manualRecipientEmail?: string;
   manualRecipientName?: string;
+  manualRecipientPhone?: string | null;
   lowConfidenceMatch?: boolean;
   userConfirmedAddress?: boolean;
   needsReview: boolean;
@@ -136,6 +137,7 @@ export default function Home() {
   }>({});
   const [routeLoading, setRouteLoading] = useState(false);
   const [reorderingMessage, setReorderingMessage] = useState<string | null>(null);
+  const [reorderingStopIndex, setReorderingStopIndex] = useState<number | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
@@ -156,10 +158,16 @@ Spacepoint Team`);
     null
   );
   const [allContacts, setAllContacts] = useState<
-    { name: string; company: string; email: string }[]
+    { name: string; company: string; email: string; phone?: string | null }[]
   >([]);
   const [additionalRecipients, setAdditionalRecipients] = useState<
-    { [propertyIndex: number]: { name: string; email: string }[] }
+    {
+      [propertyIndex: number]: {
+        name: string;
+        email: string;
+        phone?: string | null;
+      }[];
+    }
   >({});
   const [contactSearchByProperty, setContactSearchByProperty] = useState<{
     [propertyIndex: number]: string;
@@ -189,7 +197,16 @@ Spacepoint Team`);
   useEffect(() => {
     fetch("/society-contacts.json")
       .then((res) => res.json())
-      .then((data) => setAllContacts(data))
+      .then((data) =>
+        setAllContacts(
+          (data as any[]).map((contact) => ({
+            name: contact.name,
+            company: contact.company,
+            email: contact.email,
+            phone: contact.phone ?? null,
+          }))
+        )
+      )
       .catch((err) => console.error("Failed to load contacts:", err));
   }, []);
 
@@ -252,12 +269,22 @@ Spacepoint Team`);
 
   function addRecipient(
     propertyIndex: number,
-    contact: { name: string; email: string }
+    contact: { name: string; email: string; phone?: string | null }
   ) {
     setAdditionalRecipients((prev) => {
       const existing = prev[propertyIndex] || [];
       if (existing.some((recipient) => recipient.email === contact.email)) return prev;
-      return { ...prev, [propertyIndex]: [...existing, contact] };
+      return {
+        ...prev,
+        [propertyIndex]: [
+          ...existing,
+          {
+            name: contact.name,
+            email: contact.email,
+            phone: contact.phone || null,
+          },
+        ],
+      };
     });
     setContactSearchByProperty((prev) => ({ ...prev, [propertyIndex]: "" }));
   }
@@ -297,7 +324,7 @@ Spacepoint Team`);
 
   function selectManualRecipientFromSearch(
     propertyIndex: number,
-    contact: { name: string; email: string }
+    contact: { name: string; email: string; phone?: string | null }
   ) {
     setProperties((prev) => {
       const next = [...prev];
@@ -305,6 +332,7 @@ Spacepoint Team`);
         ...next[propertyIndex],
         manualRecipientEmail: contact.email,
         manualRecipientName: contact.name,
+        manualRecipientPhone: contact.phone || null,
         manualRecipientSearch: "",
       };
       next[propertyIndex] = {
@@ -612,7 +640,7 @@ Spacepoint Team`);
                   {
                     email: property.manualRecipientEmail,
                     name: property.manualRecipientName || null,
-                    phone: null,
+                    phone: property.manualRecipientPhone || null,
                   },
                 ]
               : [];
@@ -621,7 +649,7 @@ Spacepoint Team`);
         ).map((recipient) => ({
           email: recipient.email,
           name: recipient.name,
-          phone: null,
+          phone: recipient.phone || null,
         }));
         const allRecipients = [...recipients, ...extraRecipients];
 
@@ -787,6 +815,7 @@ Spacepoint Team`);
         if (thisRequestId === recalculateRequestIdRef.current) {
           setRouteLoading(false);
           setReorderingMessage(null);
+          setReorderingStopIndex(null);
         }
       });
   }
@@ -796,6 +825,7 @@ Spacepoint Team`);
     const newIndex = direction === "up" ? index - 1 : index + 1;
     if (newIndex < 0 || newIndex >= routeResult.stops.length) return;
     setReorderingMessage("Recalculating your route order...");
+    setReorderingStopIndex(index);
     reorderStops(index, newIndex);
   }
 
@@ -1885,6 +1915,11 @@ Spacepoint Team`);
                             >
                               <IconChevronDown size={20} stroke={1.75} />
                             </button>
+                          )}
+                          {reorderingStopIndex === i && (
+                            <p style={{ fontSize: 11, color: "#185FA5", marginTop: 4, whiteSpace: "nowrap" }}>
+                              Recalculating…
+                            </p>
                           )}
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
