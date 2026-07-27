@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconGripVertical } from "@tabler/icons-react";
+import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconChevronUp, IconChevronDown } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
 
@@ -128,7 +128,6 @@ export default function Home() {
   const [optimizedTotalMinutes, setOptimizedTotalMinutes] = useState<
     number | null
   >(null);
-  const [draggedStopIndex, setDraggedStopIndex] = useState<number | null>(null);
   const [editedDurations, setEditedDurations] = useState<{
     [key: number]: number;
   } | null>(null);
@@ -784,6 +783,13 @@ Spacepoint Team`);
           setRouteLoading(false);
         }
       });
+  }
+
+  function moveStop(index: number, direction: "up" | "down") {
+    if (!routeResult) return;
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= routeResult.stops.length) return;
+    reorderStops(index, newIndex);
   }
 
   async function handleDownloadSchedule() {
@@ -1679,11 +1685,11 @@ Spacepoint Team`);
 
             <RouteMap stops={routeResult.stops} />
 
-            <div style={{ position: "relative", paddingLeft: 28 }}>
+            <div style={{ position: "relative", paddingLeft: 68 }}>
               <div
                 style={{
                   position: "absolute",
-                  left: 9,
+                  left: 49,
                   top: 8,
                   bottom: 8,
                   width: 2,
@@ -1793,34 +1799,11 @@ Spacepoint Team`);
                       )}
 
                       <div
-                        draggable
-                        onDragStart={() => setDraggedStopIndex(i)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => {
-                          if (draggedStopIndex !== null) {
-                            reorderStops(draggedStopIndex, i);
-                          }
-                          setDraggedStopIndex(null);
-                        }}
-                        onDragEnd={() => setDraggedStopIndex(null)}
                         style={{
                           position: "relative",
                           marginBottom: 20,
-                          opacity: draggedStopIndex === i ? 0.5 : 1,
-                          cursor: "grab",
                         }}
                       >
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: -52,
-                            top: 4,
-                            color: "#999",
-                            cursor: "grab",
-                          }}
-                        >
-                          <IconGripVertical size={16} stroke={1.75} />
-                        </div>
                         <div
                           style={{
                             position: "absolute",
@@ -1839,6 +1822,63 @@ Spacepoint Team`);
                           }}
                         >
                           {i + 1}
+                        </div>
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: -60,
+                            top: 0,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                          }}
+                        >
+                          {i > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => moveStop(i, "up")}
+                              disabled={routeLoading}
+                              aria-label="Move stop up"
+                              style={{
+                                width: 32,
+                                height: 32,
+                                padding: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: "1px solid #999",
+                                borderRadius: 4,
+                                background: "#fff",
+                                cursor: routeLoading ? "not-allowed" : "pointer",
+                                opacity: routeLoading ? 0.5 : 1,
+                              }}
+                            >
+                              <IconChevronUp size={20} stroke={1.75} />
+                            </button>
+                          )}
+                          {i < routeResult.stops.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => moveStop(i, "down")}
+                              disabled={routeLoading}
+                              aria-label="Move stop down"
+                              style={{
+                                width: 32,
+                                height: 32,
+                                padding: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: "1px solid #999",
+                                borderRadius: 4,
+                                background: "#fff",
+                                cursor: routeLoading ? "not-allowed" : "pointer",
+                                opacity: routeLoading ? 0.5 : 1,
+                              }}
+                            >
+                              <IconChevronDown size={20} stroke={1.75} />
+                            </button>
+                          )}
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
                           {arrivalTime}
