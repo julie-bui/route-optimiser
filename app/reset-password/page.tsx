@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get("token");
@@ -46,46 +46,50 @@ export default function ResetPasswordPage() {
   }
 
   if (!token) {
-    return (
-      <main style={{ maxWidth: 360, margin: "80px auto", padding: 24 }}>
-        <p style={{ color: "#a32d2d" }}>This reset link is invalid.</p>
-      </main>
-    );
+    return <p style={{ color: "#a32d2d" }}>This reset link is invalid.</p>;
   }
 
   return (
+    <form onSubmit={handleSubmit}>
+      <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>New password</label>
+      <input
+        type="password"
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        required
+        style={{ width: "100%", padding: "8px 10px", marginBottom: 16, border: "1px solid #999", borderRadius: 4 }}
+      />
+      <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>Confirm new password</label>
+      <input
+        type="password"
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+        required
+        style={{ width: "100%", padding: "8px 10px", marginBottom: 16, border: "1px solid #999", borderRadius: 4 }}
+      />
+      {message && (
+        <p style={{ fontSize: 13, color: message.isError ? "#a32d2d" : "#0f6e56", marginBottom: 12 }}>
+          {message.text}
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={saving}
+        style={{ width: "100%", padding: "10px", background: "#000", color: "#fff", border: "none", borderRadius: 4, opacity: saving ? 0.6 : 1 }}
+      >
+        {saving ? "Saving..." : "Reset password"}
+      </button>
+    </form>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
     <main style={{ maxWidth: 360, margin: "80px auto", padding: 24 }}>
       <h1 style={{ fontSize: 22, marginBottom: 20 }}>Set a new password</h1>
-      <form onSubmit={handleSubmit}>
-        <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>New password</label>
-        <input
-          type="password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          required
-          style={{ width: "100%", padding: "8px 10px", marginBottom: 16, border: "1px solid #999", borderRadius: 4 }}
-        />
-        <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 4 }}>Confirm new password</label>
-        <input
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          required
-          style={{ width: "100%", padding: "8px 10px", marginBottom: 16, border: "1px solid #999", borderRadius: 4 }}
-        />
-        {message && (
-          <p style={{ fontSize: 13, color: message.isError ? "#a32d2d" : "#0f6e56", marginBottom: 12 }}>
-            {message.text}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={saving}
-          style={{ width: "100%", padding: "10px", background: "#000", color: "#fff", border: "none", borderRadius: 4, opacity: saving ? 0.6 : 1 }}
-        >
-          {saving ? "Saving..." : "Reset password"}
-        </button>
-      </form>
+      <Suspense fallback={<p>Loading...</p>}>
+        <ResetPasswordForm />
+      </Suspense>
     </main>
   );
 }
