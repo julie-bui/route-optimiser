@@ -3,15 +3,20 @@ import { getJourney } from "@/app/lib/journey";
 import type { PropertyPoint } from "@/app/lib/journey";
 
 export async function POST(req: NextRequest) {
-  const { orderedStops, travelMode, tourDate, startTime } = await req.json();
+  const { orderedStops, travelMode, tourDate, startTime, editedFromIndex } = await req.json();
 
   try {
     let currentTime = new Date(`${tourDate}T${startTime}:00`);
-    const recalculated = [];
+    const recalculated: any[] = [];
+
+    const skipRefetchBefore = typeof editedFromIndex === "number" ? editedFromIndex : 0;
 
     for (let i = 0; i < orderedStops.length; i++) {
       const stop = orderedStops[i] as PropertyPoint & {
         viewingMinutes?: number;
+        arrivalTime?: string;
+        travelMinutesFromPrevious?: number;
+        legs?: any[];
       };
 
       if (i === 0) {
@@ -21,19 +26,22 @@ export async function POST(req: NextRequest) {
           travelMinutesFromPrevious: 0,
           legs: [],
         });
+      } else if (i < skipRefetchBefore && stop.arrivalTime && stop.travelMinutesFromPrevious !== undefined) {
+        // This leg is before the edited stop and unaffected - reuse its known data,
+        // just replay the cumulative clock instead of calling getJourney again.
+        currentTime = new Date(currentTime.getTime() + (stop.travelMinutesFromPrevious ?? 0) * 60000);
+        recalculated.push({
+          ...stop,
+          arrivalTime: currentTime.toISOString(),
+          travelMinutesFromPrevious: stop.travelMinutesFromPrevious,
+          legs: stop.legs ?? [],
+        });
       } else {
         const departAt = currentTime.toISOString();
         const previousStop = orderedStops[i - 1] as PropertyPoint;
-        const journey = await getJourney(
-          previousStop,
-          stop,
-          travelMode,
-          departAt
-        );
+        const journey = await getJourney(previousStop, stop, travelMode, departAt);
 
-        currentTime = new Date(
-          currentTime.getTime() + journey.totalMinutes * 60000
-        );
+        currentTime = new Date(currentTime.getTime() + journey.totalMinutes * 60000);
 
         recalculated.push({
           ...stop,
@@ -43,9 +51,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      currentTime = new Date(
-        currentTime.getTime() + (stop.viewingMinutes ?? 15) * 60000
-      );
+      currentTime = new Date(currentTime.getTime() + (stop.viewingMinutes ?? 15) * 60000);
     }
 
     const totalTravelMinutes = recalculated.reduce(

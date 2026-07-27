@@ -40,22 +40,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const scheduleLines = stops
-    .map((stop: any, index: number) => {
-      const time = stop.arrivalTime ? formatTime(stop.arrivalTime) : "";
-      const viewing = stop.viewingMinutes ? `${stop.viewingMinutes} min` : "";
-      const travel =
-        index === 0
-          ? ""
-          : `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`;
-      const mode = index === 0 ? "" : describeLegs(stop.legs);
+  const scheduleLines = stops.map((stop: any, i: number) => {
+    const time = stop.arrivalTime ? formatTime(stop.arrivalTime) : "";
+    const viewing = stop.viewingMinutes ? `${stop.viewingMinutes} min` : "";
+    const travel = i === 0 ? "" : `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`;
+    const mode = i === 0 ? "" : describeLegs(stop.legs);
 
-      return `${index + 1}. ${time} - ${stop.address}
+    const agentNames = (stop.recipients || [])
+      .map((r: any) => r.name)
+      .filter(Boolean)
+      .join(", ") || "N/A";
+    const agentPhones = (stop.recipients || [])
+      .map((r: any) => r.phone)
+      .filter(Boolean)
+      .join(", ") || "N/A";
+
+    return `${i + 1}. ${time} - ${stop.address}
+   Agent: ${agentNames}
+   Number: ${agentPhones}
    Viewing time: ${viewing}
    Travel time: ${travel}
    Travel mode: ${mode}`;
-    })
-    .join("\n\n");
+  }).join("\n\n");
 
   try {
     const { data, error } = await resend.emails.send({

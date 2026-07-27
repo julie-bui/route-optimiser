@@ -135,6 +135,7 @@ export default function Home() {
     [key: number]: string;
   }>({});
   const [routeLoading, setRouteLoading] = useState(false);
+  const [reorderingMessage, setReorderingMessage] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailResults, setEmailResults] = useState<any[] | null>(null);
@@ -666,7 +667,7 @@ Spacepoint Team`);
     }
   }
 
-  async function handleRecalculateClick() {
+  async function handleRecalculateClick(editedFromIndex?: number) {
     const durations = editedDurationsRef.current;
     if (!durations || !routeResult) return;
 
@@ -687,6 +688,7 @@ Spacepoint Team`);
           travelMode,
           tourDate,
           startTime,
+          ...(editedFromIndex !== undefined ? { editedFromIndex } : {}),
         }),
       });
 
@@ -784,6 +786,7 @@ Spacepoint Team`);
       .finally(() => {
         if (thisRequestId === recalculateRequestIdRef.current) {
           setRouteLoading(false);
+          setReorderingMessage(null);
         }
       });
   }
@@ -792,6 +795,7 @@ Spacepoint Team`);
     if (!routeResult) return;
     const newIndex = direction === "up" ? index - 1 : index + 1;
     if (newIndex < 0 || newIndex >= routeResult.stops.length) return;
+    setReorderingMessage("Recalculating your route order...");
     reorderStops(index, newIndex);
   }
 
@@ -1649,7 +1653,7 @@ Spacepoint Team`);
           <div className="max-w-4xl mx-auto">
             {routeLoading && (
               <p style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>
-                Updating schedule…
+                {reorderingMessage || "Updating schedule…"}
               </p>
             )}
             <div
@@ -1952,7 +1956,7 @@ Spacepoint Team`);
                                 }
                                 recalculateTimeoutRef.current = setTimeout(
                                   () => {
-                                    void handleRecalculateClick().catch(
+                                    void handleRecalculateClick(i).catch(
                                       () => {}
                                     );
                                   },
@@ -1987,7 +1991,7 @@ Spacepoint Team`);
                                 if (recalculateTimeoutRef.current) {
                                   clearTimeout(recalculateTimeoutRef.current);
                                 }
-                                void handleRecalculateClick().catch(() => {});
+                                void handleRecalculateClick(i).catch(() => {});
                                 e.currentTarget.blur();
                               }
                             }}

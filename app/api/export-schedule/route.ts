@@ -73,12 +73,23 @@ export async function POST(req: NextRequest) {
             roundUpMinutesToFive(travelMinutes)
           );
 
+    console.log(`Stop "${stop.address}" recipients:`, JSON.stringify(stop.recipients));
+
+    const agentNames = (stop.recipients || [])
+      .map((r: any) => r.name)
+      .filter(Boolean)
+      .join(", ");
+    const agentPhones = (stop.recipients || [])
+      .map((r: any) => r.phone)
+      .filter(Boolean)
+      .join(", ");
+
     const row = sheet.addRow([
       i + 1,
       timeValue,
       stop.address,
-      "",
-      "",
+      agentNames,
+      agentPhones,
       viewingValue,
       travelValue,
       i === 0 ? "" : describeLegs(stop.legs),
