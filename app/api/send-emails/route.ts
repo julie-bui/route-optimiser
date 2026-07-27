@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import { Resend } from "resend";
 import { formatRoundedTime } from "../../lib/timeFormat";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -38,6 +40,9 @@ Thank you,
 Spacepoint Team`;
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  const replyToEmail = session?.user?.email || "juliehamibui@outlook.com";
+
   const { stops, tourDate, ccEmails, emailSubject, emailBody } =
     await req.json();
 
@@ -107,7 +112,7 @@ export async function POST(req: NextRequest) {
         const { data, error } = await resend.emails.send({
           from: "Spacepoint <viewings@spre.agency>",
           to: recipientEmail,
-          replyTo: ["lthomasson@spacepoint.co.uk", "moneill@spacepoint.co.uk"],
+          replyTo: replyToEmail,
           cc: validCcEmails.length > 0 ? validCcEmails : undefined,
           subject: filledSubject,
           text: filledBody,
