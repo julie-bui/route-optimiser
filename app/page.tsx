@@ -1008,6 +1008,9 @@ Spacepoint Team`);
 
   return (
     <main className="p-8 max-w-6xl mx-auto">
+      <a href="/account" style={{ fontSize: 13, color: "#666", textDecoration: "underline" }}>
+        Account settings
+      </a>
       {step === "extract" && (
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-medium mb-4">Upload brochures</h1>
