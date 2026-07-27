@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
+import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconGripVertical } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
 
@@ -90,6 +90,24 @@ function formatArrivalTime(date: Date): string {
   });
 }
 
+function useButtonState() {
+  const [state, setState] = useState<"idle" | "loading" | "success">("idle");
+
+  const run = async (action: () => Promise<void>) => {
+    setState("loading");
+    try {
+      await action();
+      setState("success");
+      setTimeout(() => setState("idle"), 2000);
+    } catch (err) {
+      setState("idle");
+      throw err;
+    }
+  };
+
+  return { state, run };
+}
+
 export default function Home() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [manualAddressText, setManualAddressText] = useState("");
@@ -107,9 +125,16 @@ export default function Home() {
     "publicTransport" | "walking" | "cycling" | "car" | "taxi"
   >("publicTransport");
   const [routeResult, setRouteResult] = useState<any>(null);
+  const [optimizedTotalMinutes, setOptimizedTotalMinutes] = useState<
+    number | null
+  >(null);
+  const [draggedStopIndex, setDraggedStopIndex] = useState<number | null>(null);
   const [editedDurations, setEditedDurations] = useState<{
     [key: number]: number;
   } | null>(null);
+  const [editingDurationText, setEditingDurationText] = useState<{
+    [key: number]: string;
+  }>({});
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [emailSending, setEmailSending] = useState(false);
@@ -140,6 +165,26 @@ Spacepoint Team`);
     [propertyIndex: number]: string;
   }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recalculateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const recalculateRequestIdRef = useRef(0);
+  const editedDurationsRef = useRef(editedDurations);
+  editedDurationsRef.current = editedDurations;
+  const extractButtonState = useButtonState();
+  const continueButtonState = useButtonState();
+  const confirmRouteButtonState = useButtonState();
+  const downloadScheduleButtonState = useButtonState();
+  const emailScheduleButtonState = useButtonState();
+  const confirmSendButtonState = useButtonState();
+
+  useEffect(() => {
+    return () => {
+      if (recalculateTimeoutRef.current) {
+        clearTimeout(recalculateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     fetch("/society-contacts.json")
@@ -317,37 +362,43 @@ Spacepoint Team`);
     if (pendingFiles.length === 0) return;
     setLoading(true);
 
-    const formData = new FormData();
-    pendingFiles.forEach((f) => formData.append("files", f));
+    try {
+      const formData = new FormData();
+      pendingFiles.forEach((f) => formData.append("files", f));
 
-    const res = await fetch("/api/extract", { method: "POST", body: formData });
-    const data = await res.json();
+      const res = await fetch("/api/extract", { method: "POST", body: formData });
+      if (!res.ok) {
+        throw new Error(`Extract failed: ${res.status}`);
+      }
+      const data = await res.json();
 
-    const initialized = data.results.map((property: any) => {
-      const initializedProperty: Property = {
-        ...property,
-        agencies: property.agencies || [],
-        selectedEmails: Object.fromEntries(
-          (property.agencies || []).map((agency: any, index: number) => [
-            index,
-            agency.contacts?.[0]?.email || "",
-          ])
-        ),
-        customEmailMode: Object.fromEntries(
-          (property.agencies || []).map((_: any, index: number) => [index, false])
-        ),
-        needsReview: true,
-      };
+      const initialized = data.results.map((property: any) => {
+        const initializedProperty: Property = {
+          ...property,
+          agencies: property.agencies || [],
+          selectedEmails: Object.fromEntries(
+            (property.agencies || []).map((agency: any, index: number) => [
+              index,
+              agency.contacts?.[0]?.email || "",
+            ])
+          ),
+          customEmailMode: Object.fromEntries(
+            (property.agencies || []).map((_: any, index: number) => [index, false])
+          ),
+          needsReview: true,
+        };
 
-      return {
-        ...initializedProperty,
-        needsReview: needsPropertyReview(initializedProperty),
-      };
-    });
+        return {
+          ...initializedProperty,
+          needsReview: needsPropertyReview(initializedProperty),
+        };
+      });
 
-    setProperties((prev) => [...prev, ...initialized]);
-    setPendingFiles([]); // clear the staging area now that they're processed
-    setLoading(false);
+      setProperties((prev) => [...prev, ...initialized]);
+      setPendingFiles([]); // clear the staging area now that they're processed
+    } finally {
+      setLoading(false);
+    }
   }
 
   function updateField(index: number, field: "address", value: string) {
@@ -510,18 +561,32 @@ Spacepoint Team`);
 
       if (merged.some((property) => property.needsReview)) {
         setGeocodeError("Some addresses need review before continuing.");
+        throw new Error("Some addresses need review before continuing.");
       } else {
         setStep("plan");
       }
     } catch (err: any) {
       setGeocodeError(err.message || "Geocoding failed");
+      throw err;
     } finally {
       setGeocodeLoading(false);
     }
   }
 
   async function handleConfirmRoute() {
-    if (startPropertyIndex === null) return;
+    const missingFields: string[] = [];
+
+    if (startPropertyIndex === null) missingFields.push("a starting property");
+    if (!tourDate) missingFields.push("a tour date");
+    if (!startTime) missingFields.push("a start time");
+    if (!travelMode) missingFields.push("a travel mode");
+
+    if (missingFields.length > 0) {
+      const message = `Please select ${missingFields.join(", ")} before confirming the route.`;
+      setRouteError(message);
+      throw new Error(message);
+    }
+
     setRouteLoading(true);
     setRouteError(null);
     const propertiesForRoute = geocodedProperties.map(
@@ -581,9 +646,10 @@ Spacepoint Team`);
       const data = await res.json();
       if (!res.ok) {
         setRouteError(data.error || `Route optimization failed (${res.status})`);
-        return;
+        throw new Error(data.error || `Route optimization failed (${res.status})`);
       }
       setRouteResult(data);
+      setOptimizedTotalMinutes(data.totalTravelMinutes);
       setEditedDurations(
         Object.fromEntries(
           data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
@@ -592,17 +658,21 @@ Spacepoint Team`);
       setStep("route");
     } catch (err: any) {
       setRouteError(err?.message || "Failed to optimize route. Please try again.");
+      throw err;
     } finally {
       setRouteLoading(false);
     }
   }
 
   async function handleRecalculateClick() {
-    if (!editedDurations || !routeResult) return;
+    const durations = editedDurationsRef.current;
+    if (!durations || !routeResult) return;
+
+    const thisRequestId = ++recalculateRequestIdRef.current;
 
     const updatedStops = routeResult.stops.map((s: any, i: number) => ({
       ...s,
-      viewingMinutes: editedDurations[i] ?? s.viewingMinutes ?? 15,
+      viewingMinutes: durations[i] ?? s.viewingMinutes ?? 15,
     }));
 
     setRouteLoading(true);
@@ -623,6 +693,10 @@ Spacepoint Team`);
         throw new Error(data.error || "Failed to recalculate schedule");
       }
 
+      if (thisRequestId !== recalculateRequestIdRef.current) {
+        return;
+      }
+
       setRouteResult({
         ...routeResult,
         stops: data.stops,
@@ -634,10 +708,82 @@ Spacepoint Team`);
         )
       );
     } catch (err: any) {
-      setRouteError(err.message || "Failed to recalculate schedule");
+      if (thisRequestId === recalculateRequestIdRef.current) {
+        setRouteError(err.message || "Failed to recalculate schedule");
+      }
+      throw err;
     } finally {
-      setRouteLoading(false);
+      if (thisRequestId === recalculateRequestIdRef.current) {
+        setRouteLoading(false);
+      }
     }
+  }
+
+  function reorderStops(fromIndex: number, toIndex: number) {
+    if (!routeResult || fromIndex === toIndex) return;
+
+    const thisRequestId = ++recalculateRequestIdRef.current;
+
+    const durations = editedDurationsRef.current;
+    const withDurations = routeResult.stops.map((s: any, i: number) => ({
+      ...s,
+      viewingMinutes: durations?.[i] ?? s.viewingMinutes ?? 15,
+    }));
+
+    const reordered = [...withDurations];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    setRouteLoading(true);
+    setRouteError(null);
+
+    fetch("/api/recalculate-schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderedStops: reordered,
+        travelMode,
+        tourDate,
+        startTime,
+      }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to reorder stops");
+        }
+        return data;
+      })
+      .then((data) => {
+        if (thisRequestId !== recalculateRequestIdRef.current) {
+          return;
+        }
+        setRouteResult((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                stops: data.stops,
+                totalTravelMinutes: data.totalTravelMinutes,
+              }
+            : prev
+        );
+        setEditedDurations(
+          Object.fromEntries(
+            data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
+          )
+        );
+        setEditingDurationText({});
+      })
+      .catch((err) => {
+        if (thisRequestId === recalculateRequestIdRef.current) {
+          setRouteError(err.message || "Failed to reorder stops");
+        }
+      })
+      .finally(() => {
+        if (thisRequestId === recalculateRequestIdRef.current) {
+          setRouteLoading(false);
+        }
+      });
   }
 
   async function handleDownloadSchedule() {
@@ -649,6 +795,10 @@ Spacepoint Team`);
         travelMode,
       }),
     });
+
+    if (!res.ok) {
+      throw new Error(`Download failed: ${res.status}`);
+    }
 
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
@@ -664,7 +814,7 @@ Spacepoint Team`);
   async function handleEmailSchedule() {
     if (!scheduleEmailAddress || !isValidEmail(scheduleEmailAddress)) {
       setScheduleEmailResult("Please enter a valid email address");
-      return;
+      throw new Error("Please enter a valid email address");
     }
 
     setScheduleEmailSending(true);
@@ -684,11 +834,19 @@ Spacepoint Team`);
 
       if (!res.ok || data.error) {
         setScheduleEmailResult(`Failed: ${data.error || "Unknown error"}`);
+        throw new Error(data.error || "Unknown error");
       } else {
         setScheduleEmailResult(`Sent to ${scheduleEmailAddress}`);
       }
     } catch (err: any) {
-      setScheduleEmailResult(`Failed: ${err.message}`);
+      const message = err?.message || "Unknown error";
+      if (
+        message !== "Please enter a valid email address" &&
+        !String(scheduleEmailResult || "").startsWith("Failed:")
+      ) {
+        setScheduleEmailResult(`Failed: ${message}`);
+      }
+      throw err;
     } finally {
       setScheduleEmailSending(false);
     }
@@ -754,11 +912,15 @@ Spacepoint Team`);
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Send failed: ${res.status}`);
+      }
       setEmailResults(data.results);
     } catch (err: any) {
       setEmailResults([
         { address: "N/A", status: "failed", reason: err.message },
       ]);
+      throw err;
     } finally {
       setEmailSending(false);
     }
@@ -770,8 +932,6 @@ Spacepoint Team`);
 
   const allResolved =
     properties.length > 0 && properties.every((property) => !needsPropertyReview(property));
-  const canConfirmRoute =
-    startPropertyIndex !== null && tourDate !== "" && startTime !== "";
   function buildArrivalTimes(stops: any[]): Date[] {
     const cursor = new Date(`${tourDate}T${startTime}`);
     return stops.map((stop) => {
@@ -869,11 +1029,28 @@ Spacepoint Team`);
                 ))}
               </ul>
               <button
-                onClick={handleExtract}
-                disabled={loading}
+                onClick={() => {
+                  void extractButtonState.run(handleExtract).catch(() => {});
+                }}
+                disabled={loading || extractButtonState.state === "loading"}
                 className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
+                style={{
+                  opacity: extractButtonState.state === "loading" ? 0.6 : 1,
+                  borderColor:
+                    extractButtonState.state === "success"
+                      ? "var(--border-success, #0f6e56)"
+                      : undefined,
+                  color:
+                    extractButtonState.state === "success"
+                      ? "var(--text-success, #0f6e56)"
+                      : undefined,
+                }}
               >
-                {loading ? "Extracting..." : `Extract ${pendingFiles.length} file${pendingFiles.length > 1 ? "s" : ""}`}
+                {extractButtonState.state === "loading"
+                  ? "Extracting..."
+                  : extractButtonState.state === "success"
+                    ? "✓ Extracted"
+                    : `Extract ${pendingFiles.length} file${pendingFiles.length > 1 ? "s" : ""}`}
               </button>
             </div>
           )}
@@ -1299,11 +1476,32 @@ Spacepoint Team`);
           )}
 
           <button
-            onClick={handleContinue}
-            disabled={!allResolved || geocodeLoading}
+            onClick={() => {
+              void continueButtonState.run(handleContinue).catch(() => {});
+            }}
+            disabled={
+              !allResolved ||
+              geocodeLoading ||
+              continueButtonState.state === "loading"
+            }
             className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
+            style={{
+              opacity: continueButtonState.state === "loading" ? 0.6 : 1,
+              borderColor:
+                continueButtonState.state === "success"
+                  ? "var(--border-success, #0f6e56)"
+                  : undefined,
+              color:
+                continueButtonState.state === "success"
+                  ? "var(--text-success, #0f6e56)"
+                  : undefined,
+            }}
           >
-            {geocodeLoading ? "Geocoding..." : "Continue"}
+            {continueButtonState.state === "loading"
+              ? "Checking addresses..."
+              : continueButtonState.state === "success"
+                ? "✓ Ready"
+                : "Continue"}
           </button>
         </div>
       )}
@@ -1408,11 +1606,30 @@ Spacepoint Team`);
                 Back
               </button>
               <button
-                onClick={handleConfirmRoute}
-                disabled={!canConfirmRoute}
+                onClick={() => {
+                  void confirmRouteButtonState
+                    .run(handleConfirmRoute)
+                    .catch(() => {});
+                }}
+                disabled={confirmRouteButtonState.state === "loading"}
                 className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
+                style={{
+                  opacity: confirmRouteButtonState.state === "loading" ? 0.6 : 1,
+                  borderColor:
+                    confirmRouteButtonState.state === "success"
+                      ? "var(--border-success, #0f6e56)"
+                      : undefined,
+                  color:
+                    confirmRouteButtonState.state === "success"
+                      ? "var(--text-success, #0f6e56)"
+                      : undefined,
+                }}
               >
-                Confirm route
+                {confirmRouteButtonState.state === "loading"
+                  ? "Calculating..."
+                  : confirmRouteButtonState.state === "success"
+                    ? "✓ Route ready"
+                    : "Confirm route"}
               </button>
             </div>
           </div>
@@ -1420,12 +1637,12 @@ Spacepoint Team`);
       )}
 
       {step === "route" && routeResult && (
-        routeLoading ? (
-          <p className="max-w-4xl mx-auto text-center text-sm text-gray-500">
-            Optimizing your route…
-          </p>
-        ) : (
           <div className="max-w-4xl mx-auto">
+            {routeLoading && (
+              <p style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>
+                Updating schedule…
+              </p>
+            )}
             <div
               style={{
                 marginBottom: 16,
@@ -1450,6 +1667,14 @@ Spacepoint Team`);
                   min total viewing
                 </span>
               </div>
+              {optimizedTotalMinutes !== null &&
+                Math.round(routeResult.totalTravelMinutes) !==
+                  Math.round(optimizedTotalMinutes) && (
+                  <p style={{ fontSize: 12, color: "#999", margin: "4px 0 0" }}>
+                    Optimized order was {Math.round(optimizedTotalMinutes)} min
+                    total travel
+                  </p>
+                )}
             </div>
 
             <RouteMap stops={routeResult.stops} />
@@ -1567,7 +1792,35 @@ Spacepoint Team`);
                         </div>
                       )}
 
-                      <div style={{ position: "relative", marginBottom: 20 }}>
+                      <div
+                        draggable
+                        onDragStart={() => setDraggedStopIndex(i)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => {
+                          if (draggedStopIndex !== null) {
+                            reorderStops(draggedStopIndex, i);
+                          }
+                          setDraggedStopIndex(null);
+                        }}
+                        onDragEnd={() => setDraggedStopIndex(null)}
+                        style={{
+                          position: "relative",
+                          marginBottom: 20,
+                          opacity: draggedStopIndex === i ? 0.5 : 1,
+                          cursor: "grab",
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: -52,
+                            top: 4,
+                            color: "#999",
+                            cursor: "grab",
+                          }}
+                        >
+                          <IconGripVertical size={16} stroke={1.75} />
+                        </div>
                         <div
                           style={{
                             position: "absolute",
@@ -1620,13 +1873,80 @@ Spacepoint Team`);
                             type="number"
                             min={5}
                             step={5}
-                            value={editedDurations?.[i] ?? stop.viewingMinutes ?? 15}
+                            value={
+                              editingDurationText[i] ??
+                              String(
+                                editedDurations?.[i] ??
+                                  stop.viewingMinutes ??
+                                  15
+                              )
+                            }
                             onChange={(e) => {
-                              const raw = e.target.value;
-                              setEditedDurations((prev) => ({
-                                ...(prev ?? {}),
-                                [i]: raw === "" ? 0 : parseInt(raw),
+                              const rawValue = e.target.value;
+                              setEditingDurationText((prev) => ({
+                                ...prev,
+                                [i]: rawValue,
                               }));
+
+                              const parsed = parseInt(rawValue, 10);
+                              const previousValue =
+                                editedDurations?.[i] ?? stop.viewingMinutes;
+
+                              if (rawValue === "" || isNaN(parsed)) {
+                                return;
+                              }
+
+                              const nextDurations = {
+                                ...(editedDurationsRef.current ?? {}),
+                                [i]: parsed,
+                              };
+                              editedDurationsRef.current = nextDurations;
+                              setEditedDurations(nextDurations);
+
+                              if (parsed !== previousValue) {
+                                if (recalculateTimeoutRef.current) {
+                                  clearTimeout(recalculateTimeoutRef.current);
+                                }
+                                recalculateTimeoutRef.current = setTimeout(
+                                  () => {
+                                    void handleRecalculateClick().catch(
+                                      () => {}
+                                    );
+                                  },
+                                  600
+                                );
+                              }
+                            }}
+                            onBlur={() => {
+                              if (
+                                !editingDurationText[i] ||
+                                isNaN(parseInt(editingDurationText[i], 10))
+                              ) {
+                                const fallback =
+                                  editedDurations?.[i] ??
+                                  stop.viewingMinutes ??
+                                  15;
+                                const nextDurations = {
+                                  ...(editedDurationsRef.current ?? {}),
+                                  [i]: fallback,
+                                };
+                                editedDurationsRef.current = nextDurations;
+                                setEditedDurations(nextDurations);
+                              }
+                              setEditingDurationText((prev) => {
+                                const next = { ...prev };
+                                delete next[i];
+                                return next;
+                              });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (recalculateTimeoutRef.current) {
+                                  clearTimeout(recalculateTimeoutRef.current);
+                                }
+                                void handleRecalculateClick().catch(() => {});
+                                e.currentTarget.blur();
+                              }
                             }}
                             style={{
                               width: 60,
@@ -1657,7 +1977,7 @@ Spacepoint Team`);
                   marginBottom: 4,
                 }}
               >
-                CC emails (optional)
+                Would you like to CC yourself?
               </label>
               {ccEmails.map((email, idx) => (
                 <div key={idx} style={{ marginBottom: 6 }}>
@@ -1714,17 +2034,31 @@ Spacepoint Team`);
                 Back
               </button>
               <button
-                onClick={handleRecalculateClick}
-                disabled={routeLoading}
-                className="border border-gray-300 px-4 py-2 rounded disabled:opacity-30"
-              >
-                Recalculate route
-              </button>
-              <button
-                onClick={handleDownloadSchedule}
+                onClick={() => {
+                  void downloadScheduleButtonState
+                    .run(handleDownloadSchedule)
+                    .catch(() => {});
+                }}
+                disabled={downloadScheduleButtonState.state === "loading"}
                 className="border border-gray-300 px-4 py-2 rounded"
+                style={{
+                  opacity:
+                    downloadScheduleButtonState.state === "loading" ? 0.6 : 1,
+                  borderColor:
+                    downloadScheduleButtonState.state === "success"
+                      ? "var(--border-success, #0f6e56)"
+                      : undefined,
+                  color:
+                    downloadScheduleButtonState.state === "success"
+                      ? "var(--text-success, #0f6e56)"
+                      : undefined,
+                }}
               >
-                Download schedule
+                {downloadScheduleButtonState.state === "loading"
+                  ? "Preparing..."
+                  : downloadScheduleButtonState.state === "success"
+                    ? "✓ Downloaded"
+                    : "Download schedule"}
               </button>
               <input
                 type="email"
@@ -1742,11 +2076,33 @@ Spacepoint Team`);
                 }}
               />
               <button
-                onClick={handleEmailSchedule}
-                disabled={scheduleEmailSending}
-                style={{ marginLeft: 4 }}
+                onClick={() => {
+                  void emailScheduleButtonState
+                    .run(handleEmailSchedule)
+                    .catch(() => {});
+                }}
+                disabled={
+                  scheduleEmailSending ||
+                  emailScheduleButtonState.state === "loading"
+                }
+                style={{
+                  marginLeft: 4,
+                  opacity: emailScheduleButtonState.state === "loading" ? 0.6 : 1,
+                  borderColor:
+                    emailScheduleButtonState.state === "success"
+                      ? "var(--border-success, #0f6e56)"
+                      : undefined,
+                  color:
+                    emailScheduleButtonState.state === "success"
+                      ? "var(--text-success, #0f6e56)"
+                      : undefined,
+                }}
               >
-                {scheduleEmailSending ? "Sending..." : "Email schedule"}
+                {emailScheduleButtonState.state === "loading"
+                  ? "Sending..."
+                  : emailScheduleButtonState.state === "success"
+                    ? "✓ Sent"
+                    : "Email schedule"}
               </button>
               {scheduleEmailResult && (
                 <span
@@ -1890,16 +2246,34 @@ Spacepoint Team`);
 
                 <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                   <button
-                    onClick={handleConfirmSend}
+                    onClick={() => {
+                      void confirmSendButtonState
+                        .run(handleConfirmSend)
+                        .catch(() => {});
+                    }}
+                    disabled={confirmSendButtonState.state === "loading"}
                     style={{
                       background: "#000",
-                      color: "#fff",
+                      color:
+                        confirmSendButtonState.state === "success"
+                          ? "var(--text-success, #0f6e56)"
+                          : "#fff",
                       border: "none",
                       padding: "8px 16px",
                       borderRadius: 4,
+                      opacity:
+                        confirmSendButtonState.state === "loading" ? 0.6 : 1,
+                      borderColor:
+                        confirmSendButtonState.state === "success"
+                          ? "var(--border-success, #0f6e56)"
+                          : undefined,
                     }}
                   >
-                    Confirm and send
+                    {confirmSendButtonState.state === "loading"
+                      ? "Sending..."
+                      : confirmSendButtonState.state === "success"
+                        ? "✓ Sent"
+                        : "Confirm and send"}
                   </button>
                   <button
                     onClick={handleCancelSend}
@@ -1936,7 +2310,6 @@ Spacepoint Team`);
               </div>
             )}
           </div>
-        )
       )}
     </main>
   );
