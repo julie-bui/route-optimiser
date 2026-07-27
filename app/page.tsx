@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconChevronUp, IconChevronDown } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
@@ -110,6 +112,9 @@ function useButtonState() {
 }
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [manualAddressText, setManualAddressText] = useState("");
   const [properties, setProperties] = useState<Property[]>([]);
@@ -186,6 +191,12 @@ Spacepoint Team`);
   const downloadScheduleButtonState = useButtonState();
   const emailScheduleButtonState = useButtonState();
   const confirmSendButtonState = useButtonState();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/login");
+    }
+  }, [status, router]);
 
   useEffect(() => {
     return () => {
@@ -985,6 +996,14 @@ Spacepoint Team`);
       cursor.setMinutes(cursor.getMinutes() + (stop.viewingMinutes ?? 0));
       return arrival;
     });
+  }
+
+  if (status === "loading") {
+    return <main style={{ padding: 40, textAlign: "center" }}>Loading...</main>;
+  }
+
+  if (status === "unauthenticated") {
+    return null;
   }
 
   return (
