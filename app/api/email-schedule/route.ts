@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const scheduleLines = stops.map((stop: any, i: number) => {
+  const scheduleLinesHtml = stops.map((stop: any, i: number) => {
     const time = stop.arrivalTime ? formatTime(stop.arrivalTime) : "";
     const viewing = stop.viewingMinutes ? `${stop.viewingMinutes} min` : "";
     const travel = i === 0 ? "" : `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`;
@@ -56,25 +56,24 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join(", ") || "N/A";
 
-    return `${i + 1}. ${time} - ${stop.address}
-   Agent: ${agentNames}
-   Number: ${agentPhones}
-   Viewing time: ${viewing}
-   Travel time: ${travel}
-   Travel mode: ${mode}`;
-  }).join("\n\n");
+    return `<p style="margin: 0 0 4px 0;"><strong>${i + 1}. ${time} - ${stop.address}</strong></p>
+<p style="margin: 0 0 2px 0;">Agent: ${agentNames}</p>
+<p style="margin: 0 0 2px 0;">Number: ${agentPhones}</p>
+<p style="margin: 0 0 2px 0;">Viewing time: ${viewing}</p>
+<p style="margin: 0 0 2px 0;">Travel time: ${travel}</p>
+<p style="margin: 0 0 16px 0;">Travel mode: ${mode}</p>`;
+  }).join("");
 
   try {
     const { data, error } = await resend.emails.send({
       from: "Spacepoint <viewings@spre.agency>",
       to: recipientEmail,
       subject: `Tour schedule - ${tourDate}`,
-      text: `Hi,
-
-Here is the full tour schedule for ${tourDate}:
-
-${scheduleLines}
-`,
+      html: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #000;">
+<p>Hi,</p>
+<p>Here is the full tour schedule for ${tourDate}:</p>
+${scheduleLinesHtml}
+</div>`,
     });
 
     if (error) {

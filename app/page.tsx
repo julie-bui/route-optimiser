@@ -86,7 +86,7 @@ function recomputeManualNeedsReview(property: any): boolean {
 }
 
 function formatArrivalTime(date: Date): string {
-  return date.toLocaleTimeString([], {
+  return date.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -1009,9 +1009,14 @@ Spacepoint Team`);
 
   return (
     <main className="p-8 max-w-6xl mx-auto">
-      <a href="/account" style={{ fontSize: 13, color: "#666", textDecoration: "underline" }}>
-        Account settings
-      </a>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <a href="/account" style={{ fontSize: 13, color: "#666", textDecoration: "underline" }}>
+          Account settings
+        </a>
+<a href="/login" style={{ fontSize: 13, color: "#666", textDecoration: "underline" }}>
+  Back
+</a>
+      </div>
       {step === "extract" && (
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-medium mb-4">Upload brochures</h1>
