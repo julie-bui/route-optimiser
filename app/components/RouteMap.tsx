@@ -45,6 +45,111 @@ function findNearestStopIndex(
   return nearest;
 }
 
+function findRouteNeighborIndex(
+  from: number,
+  direction: -1 | 1,
+  excludeIndex: number,
+  length: number
+): number | null {
+  let i = from + direction;
+  while (i >= 0 && i < length) {
+    if (i !== excludeIndex) return i;
+    i += direction;
+  }
+  return null;
+}
+
+function midpoint(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): { lat: number; lng: number } {
+  return { lat: (lat1 + lat2) / 2, lng: (lng1 + lng2) / 2 };
+}
+
+function determineInsertAfter(
+  dropLat: number,
+  dropLng: number,
+  nearestIndex: number,
+  fromIndex: number,
+  stops: Stop[]
+): boolean {
+  const prevIndex = findRouteNeighborIndex(
+    nearestIndex,
+    -1,
+    fromIndex,
+    stops.length
+  );
+  const nextIndex = findRouteNeighborIndex(
+    nearestIndex,
+    1,
+    fromIndex,
+    stops.length
+  );
+
+  if (prevIndex !== null && nextIndex !== null) {
+    const prev = stops[prevIndex];
+    const nearest = stops[nearestIndex];
+    const next = stops[nextIndex];
+    const midBefore = midpoint(prev.lat, prev.lng, nearest.lat, nearest.lng);
+    const midAfter = midpoint(nearest.lat, nearest.lng, next.lat, next.lng);
+    const distToMidBefore = sqDist(dropLat, dropLng, midBefore.lat, midBefore.lng);
+    const distToMidAfter = sqDist(dropLat, dropLng, midAfter.lat, midAfter.lng);
+    if (distToMidBefore !== distToMidAfter) {
+      return distToMidAfter < distToMidBefore;
+    }
+    const distToPrev = sqDist(dropLat, dropLng, prev.lat, prev.lng);
+    const distToNext = sqDist(dropLat, dropLng, next.lat, next.lng);
+    return distToNext < distToPrev;
+  }
+
+  if (prevIndex !== null && nextIndex === null) {
+    const prev = stops[prevIndex];
+    const nearest = stops[nearestIndex];
+    const mid = midpoint(prev.lat, prev.lng, nearest.lat, nearest.lng);
+    const distToMid = sqDist(dropLat, dropLng, mid.lat, mid.lng);
+    const distToNearest = sqDist(dropLat, dropLng, nearest.lat, nearest.lng);
+    return distToNearest <= distToMid;
+  }
+
+  if (prevIndex === null && nextIndex !== null) {
+    const nearest = stops[nearestIndex];
+    const next = stops[nextIndex];
+    const mid = midpoint(nearest.lat, nearest.lng, next.lat, next.lng);
+    const distToMid = sqDist(dropLat, dropLng, mid.lat, mid.lng);
+    const distToNearest = sqDist(dropLat, dropLng, nearest.lat, nearest.lng);
+    return distToMid <= distToNearest;
+  }
+
+  return fromIndex <= nearestIndex;
+}
+
+function computeReorderTargetIndex(
+  dropLat: number,
+  dropLng: number,
+  fromIndex: number,
+  stops: Stop[]
+): number | null {
+  const nearestIndex = findNearestStopIndex(
+    dropLat,
+    dropLng,
+    stops,
+    fromIndex
+  );
+  if (nearestIndex === null) return null;
+
+  const insertAfter = determineInsertAfter(
+    dropLat,
+    dropLng,
+    nearestIndex,
+    fromIndex,
+    stops
+  );
+  const rawToIndex = insertAfter ? nearestIndex + 1 : nearestIndex;
+  return fromIndex < rawToIndex ? rawToIndex - 1 : rawToIndex;
+}
+
 const numberedIcon = (num: number, opts?: { reordering?: boolean }) => {
   const border = opts?.reordering
     ? "box-shadow:0 0 0 3px #185FA5;opacity:0.7;"
@@ -134,7 +239,12 @@ export default function RouteMap({
     (index: number, e: L.LeafletEvent) => {
       const marker = e.target as L.Marker;
       const pos = marker.getLatLng();
-      const toIndex = findNearestStopIndex(pos.lat, pos.lng, stops, index);
+      const toIndex = computeReorderTargetIndex(
+        pos.lat,
+        pos.lng,
+        index,
+        stops
+      );
       const originalLatLng = L.latLng(stops[index].lat, stops[index].lng);
 
       draggingIndexRef.current = null;
