@@ -2119,15 +2119,8 @@ Spacepoint Team`);
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label
-                style={{
-                  fontSize: 13,
-                  color: "#666",
-                  display: "block",
-                  marginBottom: 4,
-                }}
-              >
-                Would you like to CC yourself?
+              <label style={{ fontSize: 13, color: "#666", display: "block", marginBottom: 4 }}>
+                Would you like to CC an email? ({session?.user?.email} is already CC'd)
               </label>
               {ccEmails.map((email, idx) => (
                 <div key={idx} style={{ marginBottom: 6 }}>
