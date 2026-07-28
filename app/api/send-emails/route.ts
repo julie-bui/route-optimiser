@@ -42,12 +42,13 @@ Spacepoint Team`;
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   const replyToEmail = session?.user?.email || "juliehamibui@outlook.com";
+  const loggedInUserEmail = session?.user?.email || null;
 
   const { stops, tourDate, ccEmails, emailSubject, emailBody } =
     await req.json();
 
   const results = [];
-  const validCcEmails = Array.isArray(ccEmails)
+  const manualCcEmails = Array.isArray(ccEmails)
     ? ccEmails
         .filter(
           (email: string) =>
@@ -55,6 +56,11 @@ export async function POST(req: NextRequest) {
         )
         .map((email: string) => email.trim())
     : [];
+
+  const validCcEmails =
+    loggedInUserEmail && !manualCcEmails.includes(loggedInUserEmail)
+      ? [...manualCcEmails, loggedInUserEmail]
+      : manualCcEmails;
 
   for (const stop of stops) {
     const recipients = Array.isArray(stop.recipients)

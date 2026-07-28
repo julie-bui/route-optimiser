@@ -2225,13 +2225,6 @@ Spacepoint Team`);
                   {scheduleEmailResult}
                 </span>
               )}
-              <button
-                onClick={handleApproveRouteClick}
-                disabled={emailSending}
-                className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
-              >
-                {emailSending ? "Sending emails..." : "Approve route"}
-              </button>
             </div>
             {showEmailConfirmation && (
               <div
@@ -2353,6 +2346,13 @@ Spacepoint Team`);
                 )}
 
                 <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button
+                    onClick={handleApproveRouteClick}
+                    disabled={emailSending}
+                    className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
+                  >
+                    {emailSending ? "Sending emails..." : "Approve route and send email"}
+                  </button>
                   <button
                     onClick={() => {
                       void confirmSendButtonState
