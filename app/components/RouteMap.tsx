@@ -27,11 +27,14 @@ function findNearestStopIndex(
   lng: number,
   stops: Stop[],
   excludeIndex: number
-): number {
-  let nearest = excludeIndex;
+): number | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  let nearest: number | null = null;
   let minDist = Infinity;
   stops.forEach((stop, i) => {
     if (i === excludeIndex) return;
+    if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) return;
     const d = sqDist(lat, lng, stop.lat, stop.lng);
     if (d < minDist) {
       minDist = d;
@@ -97,7 +100,9 @@ export default function RouteMap({
       const pos = marker.getLatLng();
       const nearest = findNearestStopIndex(pos.lat, pos.lng, stops, index);
       setDraggingIndex(index);
-      setDropTargetIndex(nearest !== index ? nearest : null);
+      setDropTargetIndex(
+        nearest !== null && nearest !== index ? nearest : null
+      );
     },
     [stops]
   );
@@ -107,15 +112,17 @@ export default function RouteMap({
       const marker = e.target as L.Marker;
       const pos = marker.getLatLng();
       const toIndex = findNearestStopIndex(pos.lat, pos.lng, stops, index);
+      const originalLatLng = L.latLng(stops[index].lat, stops[index].lng);
 
       setDraggingIndex(null);
       setDropTargetIndex(null);
 
-      if (toIndex !== index && onReorder) {
-        onReorder(index, toIndex);
-      } else {
-        marker.setLatLng([stops[index].lat, stops[index].lng]);
+      if (toIndex === null || toIndex === index || !onReorder) {
+        marker.setLatLng(originalLatLng);
+        return;
       }
+
+      onReorder(index, toIndex);
     },
     [stops, onReorder]
   );

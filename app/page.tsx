@@ -763,6 +763,20 @@ Spacepoint Team`);
     }
   }
 
+  function remapIndexAfterReorder(
+    oldIndex: number,
+    fromIndex: number,
+    toIndex: number
+  ): number {
+    if (oldIndex === fromIndex) return toIndex;
+    if (fromIndex < toIndex) {
+      if (oldIndex > fromIndex && oldIndex <= toIndex) return oldIndex - 1;
+    } else if (fromIndex > toIndex) {
+      if (oldIndex >= toIndex && oldIndex < fromIndex) return oldIndex + 1;
+    }
+    return oldIndex;
+  }
+
   function reorderStops(fromIndex: number, toIndex: number) {
     if (!routeResult || fromIndex === toIndex) return;
 
@@ -816,7 +830,15 @@ Spacepoint Team`);
             data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
           )
         );
-        setEditingDurationText({});
+        setEditingDurationText((prev) => {
+          const next: { [key: number]: string } = {};
+          for (const [key, value] of Object.entries(prev)) {
+            const oldIdx = Number(key);
+            const newIdx = remapIndexAfterReorder(oldIdx, fromIndex, toIndex);
+            next[newIdx] = value;
+          }
+          return next;
+        });
       })
       .catch((err) => {
         if (thisRequestId === recalculateRequestIdRef.current) {
@@ -832,7 +854,7 @@ Spacepoint Team`);
       });
   }
 
-  function handleReorder(fromIndex: number, toIndex: number) {
+  function moveStop(fromIndex: number, toIndex: number) {
     if (!routeResult || fromIndex === toIndex) return;
     setReorderingMessage("Recalculating your route order...");
     setReorderingStopIndex(fromIndex);
@@ -1750,7 +1772,7 @@ Spacepoint Team`);
 
             <RouteMap
               stops={routeResult.stops}
-              onReorder={handleReorder}
+              onReorder={moveStop}
               reorderingStopIndex={reorderingStopIndex}
             />
 
