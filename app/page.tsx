@@ -1750,7 +1750,7 @@ Spacepoint Team`);
                 )}
             </div>
 
-            <RouteMap stops={routeResult.stops} />
+            <RouteMap stops={routeResult.stops} moveStop={moveStop} />
 
             <div style={{ position: "relative", paddingLeft: 68 }}>
               <div

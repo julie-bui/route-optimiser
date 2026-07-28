@@ -33,7 +33,12 @@ type Stop = {
   legs?: Leg[];
 };
 
-export default function RouteMap({ stops }: { stops: Stop[] }) {
+type RouteMapProps = {
+  stops: Stop[];
+  moveStop?: (index: number, direction: "up" | "down") => void;
+};
+
+export default function RouteMap({ stops, moveStop }: RouteMapProps) {
   if (!stops || stops.length === 0) return null;
 
   const center: [number, number] = [stops[0].lat, stops[0].lng];
@@ -115,7 +120,31 @@ export default function RouteMap({ stops }: { stops: Stop[] }) {
             position={[stop.lat, stop.lng]}
             icon={numberedIcon(i + 1)}
           >
-            <Popup>{stop.address}</Popup>
+            <Popup>
+              <div style={{ minWidth: 150 }}>
+                <p style={{ fontSize: 13, margin: "0 0 8px", fontWeight: 500 }}>{stop.address}</p>
+                {moveStop && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {i > 0 && (
+                      <button
+                        onClick={() => moveStop(i, "up")}
+                        style={{ flex: 1, padding: "4px 6px", fontSize: 12, border: "1px solid #999", borderRadius: 4, background: "#fff", cursor: "pointer" }}
+                      >
+                        ↑ Move up
+                      </button>
+                    )}
+                    {i < stops.length - 1 && (
+                      <button
+                        onClick={() => moveStop(i, "down")}
+                        style={{ flex: 1, padding: "4px 6px", fontSize: 12, border: "1px solid #999", borderRadius: 4, background: "#fff", cursor: "pointer" }}
+                      >
+                        ↓ Move down
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Popup>
           </Marker>
         ))}
       </MapContainer>
