@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -45,17 +45,12 @@ function findNearestStopIndex(
   return nearest;
 }
 
-const numberedIcon = (
-  num: number,
-  opts?: { highlighted?: boolean; reordering?: boolean }
-) => {
-  const border = opts?.highlighted
-    ? "box-shadow:0 0 0 3px #185FA5;"
-    : opts?.reordering
-      ? "box-shadow:0 0 0 3px #185FA5;opacity:0.7;"
-      : "";
+const numberedIcon = (num: number, opts?: { reordering?: boolean }) => {
+  const border = opts?.reordering
+    ? "box-shadow:0 0 0 3px #185FA5;opacity:0.7;"
+    : "";
   return L.divIcon({
-    html: `<div style="background:#000;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:grab;pointer-events:auto;${border}">${num}</div>`,
+    html: `<div style="background:#000;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:grab;${border}">${num}</div>`,
     className: "numbered-route-marker",
     iconSize: [26, 26],
     iconAnchor: [13, 13],
@@ -105,20 +100,29 @@ export default function RouteMap({
   reorderingStopIndex,
   reorderingMessage,
 }: RouteMapProps) {
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const draggingIndexRef = useRef<number | null>(null);
   const lastPathSegmentsRef = useRef<
     { key: string; positions: [number, number][] }[]
   >([]);
 
   const canReorder = Boolean(onReorder);
 
+  const markerIcons = useMemo(
+    () =>
+      stops.map((_, i) =>
+        numberedIcon(i + 1, {
+          reordering: reorderingStopIndex === i,
+        })
+      ),
+    [stops, reorderingStopIndex]
+  );
+
   const handleDrag = useCallback(
     (index: number, e: L.LeafletEvent) => {
       const marker = e.target as L.Marker;
       const pos = marker.getLatLng();
       const nearest = findNearestStopIndex(pos.lat, pos.lng, stops, index);
-      setDraggingIndex(index);
       setDropTargetIndex(
         nearest !== null && nearest !== index ? nearest : null
       );
@@ -133,7 +137,8 @@ export default function RouteMap({
       const toIndex = findNearestStopIndex(pos.lat, pos.lng, stops, index);
       const originalLatLng = L.latLng(stops[index].lat, stops[index].lng);
 
-      setDraggingIndex(null);
+      draggingIndexRef.current = null;
+      marker.setZIndexOffset(index * 10);
       setDropTargetIndex(null);
 
       if (
@@ -211,6 +216,10 @@ export default function RouteMap({
         .route-reordering-tooltip.leaflet-tooltip-top::before {
           border-top-color: #185FA5;
         }
+        .numbered-route-marker {
+          background: transparent !important;
+          border: none !important;
+        }
       `}</style>
       <MapContainer
         center={center}
@@ -243,7 +252,7 @@ export default function RouteMap({
             <Popup>{marker.name}</Popup>
           </CircleMarker>
         ))}
-        {dropTargetIndex !== null && draggingIndex !== null && (
+        {dropTargetIndex !== null && (
           <CircleMarker
             key={`drop-ring-${dropTargetIndex}`}
             center={[stops[dropTargetIndex].lat, stops[dropTargetIndex].lng]}
@@ -260,15 +269,16 @@ export default function RouteMap({
           <Marker
             key={stop.address}
             position={[stop.lat, stop.lng]}
-            icon={numberedIcon(i + 1, {
-              highlighted: dropTargetIndex === i && draggingIndex !== i,
-              reordering: reorderingStopIndex === i,
-            })}
+            icon={markerIcons[i]}
+            zIndexOffset={i * 10}
             draggable={canReorder}
             eventHandlers={
               canReorder
                 ? {
-                    dragstart: () => setDraggingIndex(i),
+                    dragstart: (e) => {
+                      draggingIndexRef.current = i;
+                      (e.target as L.Marker).setZIndexOffset(1000);
+                    },
                     drag: (e) => handleDrag(i, e),
                     dragend: (e) => handleDragEnd(i, e),
                   }
