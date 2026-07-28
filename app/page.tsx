@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconChevronUp, IconChevronDown } from "@tabler/icons-react";
+import { IconWalk, IconBus, IconTrain, IconBike, IconCar } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
 
@@ -832,13 +832,11 @@ Spacepoint Team`);
       });
   }
 
-  function moveStop(index: number, direction: "up" | "down") {
-    if (!routeResult) return;
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= routeResult.stops.length) return;
+  function handleReorder(fromIndex: number, toIndex: number) {
+    if (!routeResult || fromIndex === toIndex) return;
     setReorderingMessage("Recalculating your route order...");
-    setReorderingStopIndex(index);
-    reorderStops(index, newIndex);
+    setReorderingStopIndex(fromIndex);
+    reorderStops(fromIndex, toIndex);
   }
 
   async function handleDownloadSchedule() {
@@ -1750,7 +1748,11 @@ Spacepoint Team`);
                 )}
             </div>
 
-            <RouteMap stops={routeResult.stops} moveStop={moveStop} />
+            <RouteMap
+              stops={routeResult.stops}
+              onReorder={handleReorder}
+              reorderingStopIndex={reorderingStopIndex}
+            />
 
             <div style={{ position: "relative", paddingLeft: 68 }}>
               <div
@@ -1889,68 +1891,6 @@ Spacepoint Team`);
                           }}
                         >
                           {i + 1}
-                        </div>
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: -60,
-                            top: 0,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 4,
-                          }}
-                        >
-                          {i > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => moveStop(i, "up")}
-                              disabled={routeLoading}
-                              aria-label="Move stop up"
-                              style={{
-                                width: 32,
-                                height: 32,
-                                padding: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                border: "1px solid #999",
-                                borderRadius: 4,
-                                background: "#fff",
-                                cursor: routeLoading ? "not-allowed" : "pointer",
-                                opacity: routeLoading ? 0.5 : 1,
-                              }}
-                            >
-                              <IconChevronUp size={20} stroke={1.75} />
-                            </button>
-                          )}
-                          {i < routeResult.stops.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => moveStop(i, "down")}
-                              disabled={routeLoading}
-                              aria-label="Move stop down"
-                              style={{
-                                width: 32,
-                                height: 32,
-                                padding: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                border: "1px solid #999",
-                                borderRadius: 4,
-                                background: "#fff",
-                                cursor: routeLoading ? "not-allowed" : "pointer",
-                                opacity: routeLoading ? 0.5 : 1,
-                              }}
-                            >
-                              <IconChevronDown size={20} stroke={1.75} />
-                            </button>
-                          )}
-                          {reorderingStopIndex === i && (
-                            <p style={{ fontSize: 16, fontWeight: 500, color: "#185FA5", marginTop: 6, marginBottom: 6, whiteSpace: "nowrap" }}>
-                              Recalculating…
-                            </p>
-                          )}
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
                           {arrivalTime}
