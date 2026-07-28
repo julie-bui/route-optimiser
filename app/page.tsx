@@ -1033,9 +1033,6 @@ Spacepoint Team`);
         <a href="/account" style={{ fontSize: 13, color: "#666", textDecoration: "underline" }}>
           Account settings
         </a>
-<a href="/login" style={{ fontSize: 13, color: "#666", textDecoration: "underline" }}>
-  Back
-</a>
       </div>
       {step === "extract" && (
         <div className="max-w-4xl mx-auto">
@@ -1568,34 +1565,43 @@ Spacepoint Team`);
             <p className="mb-4 text-sm text-red-600">{geocodeError}</p>
           )}
 
-          <button
-            onClick={() => {
-              void continueButtonState.run(handleContinue).catch(() => {});
-            }}
-            disabled={
-              !allResolved ||
-              geocodeLoading ||
-              continueButtonState.state === "loading"
-            }
-            className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
-            style={{
-              opacity: continueButtonState.state === "loading" ? 0.6 : 1,
-              borderColor:
-                continueButtonState.state === "success"
-                  ? "var(--border-success, #0f6e56)"
-                  : undefined,
-              color:
-                continueButtonState.state === "success"
-                  ? "var(--text-success, #0f6e56)"
-                  : undefined,
-            }}
-          >
-            {continueButtonState.state === "loading"
-              ? "Checking addresses..."
-              : continueButtonState.state === "success"
-                ? "✓ Ready"
-                : "Continue"}
-          </button>
+          <div className="flex justify-between items-center">
+            <a
+              href="/login"
+              className="border border-gray-300 px-4 py-2 rounded"
+              style={{ textDecoration: "none", color: "inherit" }}
+            >
+              Back
+            </a>
+            <button
+              onClick={() => {
+                void continueButtonState.run(handleContinue).catch(() => {});
+              }}
+              disabled={
+                !allResolved ||
+                geocodeLoading ||
+                continueButtonState.state === "loading"
+              }
+              className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
+              style={{
+                opacity: continueButtonState.state === "loading" ? 0.6 : 1,
+                borderColor:
+                  continueButtonState.state === "success"
+                    ? "var(--border-success, #0f6e56)"
+                    : undefined,
+                color:
+                  continueButtonState.state === "success"
+                    ? "var(--text-success, #0f6e56)"
+                    : undefined,
+              }}
+            >
+              {continueButtonState.state === "loading"
+                ? "Checking addresses..."
+                : continueButtonState.state === "success"
+                  ? "✓ Ready"
+                  : "Continue"}
+            </button>
+          </div>
         </div>
       )}
 
