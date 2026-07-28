@@ -1773,6 +1773,7 @@ Spacepoint Team`);
             <RouteMap
               stops={routeResult.stops}
               onReorder={moveStop}
+              reorderingMessage={reorderingMessage}
               reorderingStopIndex={reorderingStopIndex}
             />
 

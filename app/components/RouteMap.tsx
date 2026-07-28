@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -7,6 +7,7 @@ import {
   Polyline,
   Popup,
   TileLayer,
+  Tooltip,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -46,21 +47,34 @@ function findNearestStopIndex(
 
 const numberedIcon = (
   num: number,
-  opts?: { highlighted?: boolean; dragging?: boolean; reordering?: boolean }
+  opts?: { highlighted?: boolean; reordering?: boolean }
 ) => {
   const border = opts?.highlighted
     ? "box-shadow:0 0 0 3px #185FA5;"
     : opts?.reordering
       ? "box-shadow:0 0 0 3px #185FA5;opacity:0.7;"
       : "";
-  const opacity = opts?.dragging ? "opacity:0.85;" : "";
   return L.divIcon({
-    html: `<div style="background:#000;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:grab;${border}${opacity}">${num}</div>`,
-    className: "",
+    html: `<div style="background:#000;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:grab;pointer-events:auto;${border}">${num}</div>`,
+    className: "numbered-route-marker",
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
 };
+
+function buildPathSegments(
+  stops: Stop[]
+): { key: string; positions: [number, number][] }[] {
+  const segments: { key: string; positions: [number, number][] }[] = [];
+  stops.forEach((stop, i) => {
+    if (i === 0 || !stop.pathCoordinates?.length) return;
+    segments.push({
+      key: stop.address,
+      positions: stop.pathCoordinates,
+    });
+  });
+  return segments;
+}
 
 type Leg = {
   mode: string;
@@ -82,17 +96,22 @@ type RouteMapProps = {
   stops: Stop[];
   onReorder?: (fromIndex: number, toIndex: number) => void;
   reorderingStopIndex?: number | null;
+  reorderingMessage?: string | null;
 };
 
 export default function RouteMap({
   stops,
   onReorder,
   reorderingStopIndex,
+  reorderingMessage,
 }: RouteMapProps) {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const lastPathSegmentsRef = useRef<
+    { key: string; positions: [number, number][] }[]
+  >([]);
 
-  const canDrag = Boolean(onReorder) && reorderingStopIndex == null;
+  const canReorder = Boolean(onReorder);
 
   const handleDrag = useCallback(
     (index: number, e: L.LeafletEvent) => {
@@ -117,19 +136,34 @@ export default function RouteMap({
       setDraggingIndex(null);
       setDropTargetIndex(null);
 
-      if (toIndex === null || toIndex === index || !onReorder) {
+      if (
+        reorderingStopIndex != null ||
+        toIndex === null ||
+        toIndex === index ||
+        !onReorder
+      ) {
         marker.setLatLng(originalLatLng);
         return;
       }
 
       onReorder(index, toIndex);
     },
-    [stops, onReorder]
+    [stops, onReorder, reorderingStopIndex]
   );
 
   if (!stops || stops.length === 0) return null;
 
+  const incomingSegments = buildPathSegments(stops);
+  if (incomingSegments.length > 0) {
+    lastPathSegmentsRef.current = incomingSegments;
+  }
+  const pathSegments = lastPathSegmentsRef.current;
+
   const center: [number, number] = [stops[0].lat, stops[0].lng];
+  const showReorderingLabel =
+    reorderingStopIndex != null &&
+    reorderingStopIndex >= 0 &&
+    reorderingStopIndex < stops.length;
   const stationMarkers: { coords: [number, number]; name: string }[] = [];
 
   stops.forEach((stop) => {
@@ -161,6 +195,23 @@ export default function RouteMap({
         marginBottom: 16,
       }}
     >
+      <style>{`
+        .route-reordering-tooltip.leaflet-tooltip {
+          pointer-events: none;
+          background: #185FA5;
+          color: #fff;
+          border: none;
+          font-size: 12px;
+          font-weight: 500;
+          padding: 4px 10px;
+          border-radius: 6px;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+          white-space: nowrap;
+        }
+        .route-reordering-tooltip.leaflet-tooltip-top::before {
+          border-top-color: #185FA5;
+        }
+      `}</style>
       <MapContainer
         center={center}
         zoom={13}
@@ -170,23 +221,13 @@ export default function RouteMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution="&copy; OpenStreetMap contributors"
         />
-        {stops.map((stop, i) => {
-          if (
-            i === 0 ||
-            !stop.pathCoordinates ||
-            stop.pathCoordinates.length === 0
-          ) {
-            return null;
-          }
-
-          return (
-            <Polyline
-              key={`path-${stop.lat}-${stop.lng}-${i}`}
-              positions={stop.pathCoordinates}
-              pathOptions={{ color: "#185FA5", weight: 4 }}
-            />
-          );
-        })}
+        {pathSegments.map((segment) => (
+          <Polyline
+            key={`path-${segment.key}`}
+            positions={segment.positions}
+            pathOptions={{ color: "#185FA5", weight: 4 }}
+          />
+        ))}
         {stationMarkers.map((marker, i) => (
           <CircleMarker
             key={`station-${i}`}
@@ -217,23 +258,35 @@ export default function RouteMap({
         )}
         {stops.map((stop, i) => (
           <Marker
-            key={`${stop.address}-${stop.lat}-${stop.lng}`}
+            key={stop.address}
             position={[stop.lat, stop.lng]}
             icon={numberedIcon(i + 1, {
               highlighted: dropTargetIndex === i && draggingIndex !== i,
-              dragging: draggingIndex === i,
               reordering: reorderingStopIndex === i,
             })}
-            draggable={canDrag}
+            draggable={canReorder}
             eventHandlers={
-              canDrag
+              canReorder
                 ? {
+                    dragstart: () => setDraggingIndex(i),
                     drag: (e) => handleDrag(i, e),
                     dragend: (e) => handleDragEnd(i, e),
                   }
                 : undefined
             }
           >
+            {showReorderingLabel && reorderingStopIndex === i && (
+              <Tooltip
+                permanent
+                direction="top"
+                offset={[0, -18]}
+                opacity={1}
+                interactive={false}
+                className="route-reordering-tooltip"
+              >
+                {reorderingMessage || "Recalculating…"}
+              </Tooltip>
+            )}
             <Popup>
               <div style={{ minWidth: 150 }}>
                 <p
@@ -245,7 +298,7 @@ export default function RouteMap({
                 >
                   {stop.address}
                 </p>
-                {canDrag && (
+                {canReorder && (
                   <p style={{ fontSize: 11, color: "#666", margin: 0 }}>
                     Drag pin to reorder
                   </p>
