@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
           arrivalTime: currentTime.toISOString(),
           travelMinutesFromPrevious: 0,
           legs: [],
+          pathCoordinates: [],
         });
       } else if (i < skipRefetchBefore && stop.arrivalTime && stop.travelMinutesFromPrevious !== undefined) {
         // This leg is before the edited stop and unaffected - reuse its known data,
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
           arrivalTime: currentTime.toISOString(),
           travelMinutesFromPrevious: journey.totalMinutes,
           legs: journey.legs,
+          pathCoordinates: journey?.pathCoordinates ?? [],
         });
       }
 
