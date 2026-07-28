@@ -147,7 +147,18 @@ function computeReorderTargetIndex(
     stops
   );
   const rawToIndex = insertAfter ? nearestIndex + 1 : nearestIndex;
-  return fromIndex < rawToIndex ? rawToIndex - 1 : rawToIndex;
+  let toIndex = fromIndex < rawToIndex ? rawToIndex - 1 : rawToIndex;
+
+  // Splice adjustment can cancel adjacent moves (e.g. B onto C → 1,1).
+  if (toIndex === fromIndex) {
+    if (nearestIndex === fromIndex + 1) {
+      toIndex = fromIndex + 1;
+    } else if (nearestIndex === fromIndex - 1) {
+      toIndex = fromIndex - 1;
+    }
+  }
+
+  return toIndex;
 }
 
 const numberedIcon = (num: number, opts?: { reordering?: boolean }) => {
@@ -206,12 +217,19 @@ export default function RouteMap({
   reorderingMessage,
 }: RouteMapProps) {
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [blockedDragMessage, setBlockedDragMessage] = useState<string | null>(
+    null
+  );
   const draggingIndexRef = useRef<number | null>(null);
+  const blockedDragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const lastPathSegmentsRef = useRef<
     { key: string; positions: [number, number][] }[]
   >([]);
 
   const canReorder = Boolean(onReorder);
+  const canDrag = canReorder && reorderingStopIndex == null;
 
   const markerIcons = useMemo(
     () =>
@@ -251,12 +269,20 @@ export default function RouteMap({
       marker.setZIndexOffset(index * 10);
       setDropTargetIndex(null);
 
-      if (
-        reorderingStopIndex != null ||
-        toIndex === null ||
-        toIndex === index ||
-        !onReorder
-      ) {
+      if (reorderingStopIndex != null) {
+        marker.setLatLng(originalLatLng);
+        if (blockedDragTimeoutRef.current) {
+          clearTimeout(blockedDragTimeoutRef.current);
+        }
+        setBlockedDragMessage("Route is updating — try again in a moment");
+        blockedDragTimeoutRef.current = setTimeout(() => {
+          setBlockedDragMessage(null);
+          blockedDragTimeoutRef.current = null;
+        }, 3000);
+        return;
+      }
+
+      if (toIndex === null || toIndex === index || !onReorder) {
         marker.setLatLng(originalLatLng);
         return;
       }
@@ -301,15 +327,29 @@ export default function RouteMap({
   });
 
   return (
-    <div
-      style={{
-        height: 400,
-        width: "100%",
-        borderRadius: 12,
-        overflow: "hidden",
-        marginBottom: 16,
-      }}
-    >
+    <div style={{ marginBottom: 16 }}>
+      {blockedDragMessage && (
+        <p
+          style={{
+            margin: "0 0 8px",
+            padding: "8px 12px",
+            fontSize: 13,
+            color: "#185FA5",
+            background: "#E8F1FA",
+            borderRadius: 8,
+          }}
+        >
+          {blockedDragMessage}
+        </p>
+      )}
+      <div
+        style={{
+          height: 400,
+          width: "100%",
+          borderRadius: 12,
+          overflow: "hidden",
+        }}
+      >
       <style>{`
         .route-reordering-tooltip.leaflet-tooltip {
           pointer-events: none;
@@ -381,9 +421,9 @@ export default function RouteMap({
             position={[stop.lat, stop.lng]}
             icon={markerIcons[i]}
             zIndexOffset={i * 10}
-            draggable={canReorder}
+            draggable={canDrag}
             eventHandlers={
-              canReorder
+              canDrag
                 ? {
                     dragstart: (e) => {
                       draggingIndexRef.current = i;
@@ -418,7 +458,7 @@ export default function RouteMap({
                 >
                   {stop.address}
                 </p>
-                {canReorder && (
+                {canDrag && (
                   <p style={{ fontSize: 11, color: "#666", margin: 0 }}>
                     Drag pin to reorder
                   </p>
@@ -428,6 +468,7 @@ export default function RouteMap({
           </Marker>
         ))}
       </MapContainer>
+      </div>
     </div>
   );
 }
