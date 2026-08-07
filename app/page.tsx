@@ -243,6 +243,9 @@ Spacepoint Team`);
   const [editingAddressSaving, setEditingAddressSaving] = useState(false);
   const editAddressRequestIdRef = useRef(0);
   const editAddressAbortRef = useRef<AbortController | null>(null);
+  const [showReoptimizePrompt, setShowReoptimizePrompt] = useState(false);
+  const [reoptimizing, setReoptimizing] = useState(false);
+  const [reoptimizeError, setReoptimizeError] = useState<string | null>(null);
   const extractButtonState = useButtonState();
   const continueButtonState = useButtonState();
   const confirmRouteButtonState = useButtonState();
@@ -1259,6 +1262,8 @@ Spacepoint Team`);
         setEditingAddressIndex(null);
         setEditingAddressText("");
         setEditingAddressError(null);
+        setReoptimizeError(null);
+        setShowReoptimizePrompt(true);
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;
@@ -1268,6 +1273,86 @@ Spacepoint Team`);
     } finally {
       if (requestId === editAddressRequestIdRef.current) {
         setEditingAddressSaving(false);
+      }
+    }
+  }
+
+  // Re-runs the SAME optimisation the initial "Confirm route" step uses (no
+  // second optimiser implementation) over the current, possibly-edited
+  // properties, replacing the current order. Only ever triggered explicitly by
+  // the user - an address edit never reorders on its own.
+  //
+  // Property-specific data (viewing duration, recipients, agent email, source,
+  // edited address, ...) can't be misattributed after the reorder because it's
+  // never looked up by array position in the first place: each property object
+  // carries its own data (routeResult.stops already has recipients/sourceType/
+  // etc. baked in from the initial confirm, and the current viewingMinutes is
+  // merged in below), and /api/optimize-route spreads that same object
+  // (`...properties[idx]`) into whichever position it ends up at. There's no
+  // stable `id` field on Property to begin with, but none is needed here since
+  // identity is preserved by carrying the data on the object itself rather
+  // than re-matching it against the new order afterwards.
+  async function handleReoptimizeRoute() {
+    if (!routeResult) return;
+
+    const thisRequestId = ++recalculateRequestIdRef.current;
+    const durations = editedDurationsRef.current;
+    const propertiesForReoptimize = routeResult.stops.map((s: any, i: number) => ({
+      ...s,
+      viewingMinutes: durations?.[i] ?? s.viewingMinutes ?? 15,
+    }));
+
+    setReoptimizing(true);
+    setReoptimizeError(null);
+    setRouteLoading(true);
+    setReorderingMessage("Re-optimising your route...");
+
+    try {
+      const res = await fetch("/api/optimize-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          properties: propertiesForReoptimize,
+          startLocation: confirmedStartLocation,
+          viewingMinutesDefault: 15,
+          tourDate,
+          startTime,
+          travelMode,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Route optimisation failed (${res.status})`);
+      }
+
+      if (thisRequestId !== recalculateRequestIdRef.current) return;
+
+      setRouteResult((prev: any) =>
+        prev
+          ? { ...prev, stops: data.stops, totalTravelMinutes: data.totalTravelMinutes }
+          : prev
+      );
+      setOptimizedTotalMinutes(data.totalTravelMinutes);
+      setEditedDurations(
+        Object.fromEntries(
+          data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
+        )
+      );
+      setEditingDurationText({});
+      setShowReoptimizePrompt(false);
+    } catch (err: any) {
+      // Keep the current valid route/order untouched on failure - only report
+      // the error, never clear or partially apply a failed re-optimisation.
+      if (thisRequestId === recalculateRequestIdRef.current) {
+        setReoptimizeError(
+          err?.message || "Failed to re-optimise the route. Please try again."
+        );
+      }
+    } finally {
+      if (thisRequestId === recalculateRequestIdRef.current) {
+        setReoptimizing(false);
+        setRouteLoading(false);
+        setReorderingMessage(null);
       }
     }
   }
@@ -2271,6 +2356,52 @@ Spacepoint Team`);
                   </p>
                 )}
             </div>
+
+            {showReoptimizePrompt && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  marginBottom: 16,
+                  padding: "10px 12px",
+                  background: "#E8F1FA",
+                  borderRadius: 8,
+                }}
+              >
+                <p style={{ fontSize: 13, color: "#185FA5", margin: 0 }}>
+                  Address updated. Travel times recalculated.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleReoptimizeRoute();
+                  }}
+                  disabled={reoptimizing || editingAddressIndex !== null}
+                  style={{
+                    fontSize: 12,
+                    padding: "5px 12px",
+                    border: "1px solid #185FA5",
+                    borderRadius: 4,
+                    background: "#fff",
+                    color: "#185FA5",
+                    cursor:
+                      reoptimizing || editingAddressIndex !== null
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity: reoptimizing || editingAddressIndex !== null ? 0.6 : 1,
+                  }}
+                >
+                  {reoptimizing ? "Re-optimising..." : "Re-optimise route"}
+                </button>
+                {reoptimizeError && (
+                  <p style={{ fontSize: 12, color: "#d85a30", margin: 0 }}>
+                    {reoptimizeError}
+                  </p>
+                )}
+              </div>
+            )}
 
             <RouteMap
               stops={routeResult.stops}
