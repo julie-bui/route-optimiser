@@ -72,9 +72,12 @@ function isPostcodeOnly(value: string): boolean {
 const CUSTOM_START_POSTCODE_ONLY_WARNING =
   "Please enter a full address rather than only a postcode. A postcode can cover multiple buildings and may give an inaccurate starting point.";
 
+const MIN_START_TIME = "08:00";
+const MIN_START_HOUR = 8;
+
 function generateFiveMinuteIntervals(): string[] {
   const times: string[] = [];
-  for (let h = 0; h < 24; h++) {
+  for (let h = MIN_START_HOUR; h < 24; h++) {
     for (let m = 0; m < 60; m += 5) {
       times.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
     }
@@ -83,6 +86,28 @@ function generateFiveMinuteIntervals(): string[] {
 }
 
 const FIVE_MINUTE_INTERVALS = generateFiveMinuteIntervals();
+
+// Guards against an invalid or (hypothetically, if state is ever persisted or
+// restored some other way in future) pre-08:00 start time reaching the
+// optimiser/recalculation - not just the dropdown being restricted to valid
+// options. Malformed input is treated the same as "too early" and clamped up.
+function clampStartTime(value: string): string {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return MIN_START_TIME;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (
+    !Number.isInteger(hours) ||
+    hours < 0 ||
+    hours > 23 ||
+    !Number.isInteger(minutes) ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return MIN_START_TIME;
+  }
+  return value < MIN_START_TIME ? MIN_START_TIME : value;
+}
 
 function isValidEmail(email: string): boolean {
   if (!email) return false;
@@ -170,7 +195,7 @@ export default function Home() {
   const [confirmedStartLocation, setConfirmedStartLocation] =
     useState<StartLocation | null>(null);
   const [tourDate, setTourDate] = useState("");
-  const [startTime, setStartTime] = useState("08:00");
+  const [startTime, setStartTime] = useState(() => clampStartTime(MIN_START_TIME));
   const [travelMode, setTravelMode] = useState<
     "publicTransport" | "walking" | "cycling" | "car" | "taxi"
   >("publicTransport");
@@ -865,7 +890,9 @@ Spacepoint Team`);
     const startLocationResult = buildStartLocationPayload();
     if (startLocationResult.error) missingFields.push(startLocationResult.error);
     if (!tourDate) missingFields.push("a tour date");
-    if (!startTime) missingFields.push("a start time");
+    if (!startTime || startTime < MIN_START_TIME) {
+      missingFields.push("a start time no earlier than 08:00");
+    }
     if (!travelMode) missingFields.push("a travel mode");
 
     if (missingFields.length > 0) {
@@ -2233,7 +2260,7 @@ Spacepoint Team`);
               <span className="block text-sm font-medium mb-1">Start time</span>
               <select
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                onChange={(e) => setStartTime(clampStartTime(e.target.value))}
                 style={{
                   padding: "6px 8px",
                   border: "1px solid #999",
