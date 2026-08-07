@@ -170,7 +170,7 @@ export default function Home() {
   const [confirmedStartLocation, setConfirmedStartLocation] =
     useState<StartLocation | null>(null);
   const [tourDate, setTourDate] = useState("");
-  const [startTime, setStartTime] = useState("");
+  const [startTime, setStartTime] = useState("08:00");
   const [travelMode, setTravelMode] = useState<
     "publicTransport" | "walking" | "cycling" | "car" | "taxi"
   >("publicTransport");
@@ -233,6 +233,16 @@ Spacepoint Team`);
     null
   );
   const customStartAbortRef = useRef<AbortController | null>(null);
+  const [editingAddressIndex, setEditingAddressIndex] = useState<number | null>(
+    null
+  );
+  const [editingAddressText, setEditingAddressText] = useState("");
+  const [editingAddressError, setEditingAddressError] = useState<string | null>(
+    null
+  );
+  const [editingAddressSaving, setEditingAddressSaving] = useState(false);
+  const editAddressRequestIdRef = useRef(0);
+  const editAddressAbortRef = useRef<AbortController | null>(null);
   const extractButtonState = useButtonState();
   const continueButtonState = useButtonState();
   const confirmRouteButtonState = useButtonState();
@@ -255,6 +265,7 @@ Spacepoint Team`);
         clearTimeout(customStartDebounceRef.current);
       }
       customStartAbortRef.current?.abort();
+      editAddressAbortRef.current?.abort();
     };
   }, []);
 
@@ -1098,6 +1109,167 @@ Spacepoint Team`);
     setReorderingMessage("Recalculating your route order...");
     setReorderingStopIndex(fromIndex);
     reorderStops(fromIndex, toIndex);
+  }
+
+  function startEditingPropertyAddress(stopIndex: number) {
+    if (!routeResult) return;
+    editAddressAbortRef.current?.abort();
+    setEditingAddressIndex(stopIndex);
+    setEditingAddressText(routeResult.stops[stopIndex]?.address || "");
+    setEditingAddressError(null);
+    setEditingAddressSaving(false);
+  }
+
+  function cancelEditingPropertyAddress() {
+    editAddressAbortRef.current?.abort();
+    setEditingAddressIndex(null);
+    setEditingAddressText("");
+    setEditingAddressError(null);
+    setEditingAddressSaving(false);
+  }
+
+  // Reuses the existing /api/recalculate-schedule endpoint - the same one
+  // duration edits and reorders already use - so no scheduling logic is
+  // duplicated. editedFromIndex tells it to reuse cached legs for every stop
+  // before the edited one (untouched by the address change) and recompute
+  // fresh journeys from the edited stop onward, without altering stop order.
+  async function recalculateAfterAddressEdit(
+    updatedStops: any[],
+    editedIndex: number
+  ): Promise<boolean> {
+    const thisRequestId = ++recalculateRequestIdRef.current;
+    setRouteLoading(true);
+    setRouteError(null);
+
+    try {
+      const res = await fetch("/api/recalculate-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderedStops: updatedStops,
+          travelMode,
+          tourDate,
+          startTime,
+          startLocation: confirmedStartLocation,
+          editedFromIndex: editedIndex,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to recalculate schedule");
+      }
+
+      if (thisRequestId !== recalculateRequestIdRef.current) {
+        return false;
+      }
+
+      setRouteResult((prev: any) =>
+        prev
+          ? { ...prev, stops: data.stops, totalTravelMinutes: data.totalTravelMinutes }
+          : prev
+      );
+      setEditedDurations(
+        Object.fromEntries(
+          data.stops.map((s: any, i: number) => [i, s.viewingMinutes ?? 15])
+        )
+      );
+      return true;
+    } catch (err: any) {
+      if (thisRequestId === recalculateRequestIdRef.current) {
+        setRouteError(
+          err.message || "Failed to recalculate the schedule after editing the address"
+        );
+      }
+      return false;
+    } finally {
+      if (thisRequestId === recalculateRequestIdRef.current) {
+        setRouteLoading(false);
+      }
+    }
+  }
+
+  async function saveEditedPropertyAddress(stopIndex: number) {
+    if (!routeResult) return;
+    const trimmed = editingAddressText.trim();
+    if (!trimmed) {
+      setEditingAddressError("Address is required");
+      return;
+    }
+
+    const requestId = ++editAddressRequestIdRef.current;
+    editAddressAbortRef.current?.abort();
+    const controller = new AbortController();
+    editAddressAbortRef.current = controller;
+
+    setEditingAddressSaving(true);
+    setEditingAddressError(null);
+
+    try {
+      // Reuse the shared geocoder with the SAME strict property-address rules
+      // used during upload/manual entry - no start-location leniency, no
+      // second geocoder.
+      const res = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: [trimmed] }),
+        signal: controller.signal,
+      });
+      const data = await res.json();
+
+      // A later edit (on this row or another) may have already started and
+      // finished - never let a slow, stale response overwrite a newer one.
+      if (requestId !== editAddressRequestIdRef.current) return;
+
+      const result = data.results?.[0];
+      if (!res.ok || !result || result.lat == null || result.lng == null) {
+        setEditingAddressError(
+          "Couldn't find this address - please check it and try again."
+        );
+        return;
+      }
+      if (!result.verified) {
+        setEditingAddressError(
+          "This address couldn't be matched confidently - please check it or add more detail."
+        );
+        return;
+      }
+
+      // Address and coordinates update together, atomically - never partially.
+      const updatedStop = {
+        ...routeResult.stops[stopIndex],
+        address: result.resolvedFormatted || trimmed,
+        originalAddressText: trimmed,
+        lat: result.lat,
+        lng: result.lng,
+        lowConfidenceMatch: false,
+        geocodeError: null,
+      };
+      const updatedStops = routeResult.stops.map((s: any, i: number) =>
+        i === stopIndex ? updatedStop : s
+      );
+
+      const recalculated = await recalculateAfterAddressEdit(updatedStops, stopIndex);
+      if (requestId !== editAddressRequestIdRef.current) return;
+
+      if (recalculated) {
+        // Only leave edit mode once the schedule has actually been
+        // recalculated - if recalculation failed, keep the box open (with the
+        // already-verified text still in it) so the user can retry without
+        // retyping.
+        setEditingAddressIndex(null);
+        setEditingAddressText("");
+        setEditingAddressError(null);
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+      if (requestId === editAddressRequestIdRef.current) {
+        setEditingAddressError("Failed to verify this address. Please try again.");
+      }
+    } finally {
+      if (requestId === editAddressRequestIdRef.current) {
+        setEditingAddressSaving(false);
+      }
+    }
   }
 
   async function handleDownloadSchedule() {
@@ -2358,9 +2530,101 @@ Spacepoint Team`);
                             </>
                           )}
                         </p>
-                        <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
-                          {stop.address}
-                        </p>
+                        {editingAddressIndex === i ? (
+                          <div style={{ margin: "0 0 6px" }}>
+                            <input
+                              type="text"
+                              value={editingAddressText}
+                              onChange={(e) => setEditingAddressText(e.target.value)}
+                              autoFocus
+                              disabled={editingAddressSaving}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                maxWidth: 340,
+                                padding: "4px 6px",
+                                border: "1px solid #999",
+                                borderRadius: 4,
+                                background: "#fff",
+                                color: "#000",
+                                fontSize: 14,
+                                fontWeight: 500,
+                                marginBottom: 4,
+                              }}
+                            />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void saveEditedPropertyAddress(i);
+                                }}
+                                disabled={editingAddressSaving}
+                                style={{
+                                  fontSize: 12,
+                                  padding: "4px 10px",
+                                  border: "1px solid #000",
+                                  borderRadius: 4,
+                                  background: "#000",
+                                  color: "#fff",
+                                  cursor: editingAddressSaving ? "not-allowed" : "pointer",
+                                  opacity: editingAddressSaving ? 0.6 : 1,
+                                }}
+                              >
+                                {editingAddressSaving ? "Saving..." : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingPropertyAddress}
+                                disabled={editingAddressSaving}
+                                style={{
+                                  fontSize: 12,
+                                  padding: "4px 10px",
+                                  border: "1px solid #999",
+                                  borderRadius: 4,
+                                  background: "#fff",
+                                  cursor: editingAddressSaving ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            {editingAddressError && (
+                              <p style={{ color: "#d85a30", fontSize: 12, margin: "4px 0 0" }}>
+                                {editingAddressError}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p
+                            style={{
+                              fontWeight: 500,
+                              fontSize: 14,
+                              margin: 0,
+                              display: "flex",
+                              alignItems: "baseline",
+                              gap: 8,
+                            }}
+                          >
+                            {stop.address}
+                            <button
+                              type="button"
+                              onClick={() => startEditingPropertyAddress(i)}
+                              disabled={routeLoading}
+                              style={{
+                                fontSize: 11,
+                                color: "#185FA5",
+                                background: "none",
+                                border: "none",
+                                cursor: routeLoading ? "not-allowed" : "pointer",
+                                padding: 0,
+                                textDecoration: "underline",
+                                opacity: routeLoading ? 0.5 : 1,
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </p>
+                        )}
                         <p style={{ fontSize: 13, color: "#666", margin: "2px 0 0" }}>
                           {stop.recipientEmails && stop.recipientEmails.length > 0
                             ? stop.recipientEmails.join(", ")
