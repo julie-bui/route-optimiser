@@ -1,9 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getJourney } from "@/app/lib/journey";
 import type { PropertyPoint } from "@/app/lib/journey";
+import {
+  externalStartPoint,
+  validateStartLocationPayload,
+} from "@/app/lib/startLocation";
 
 export async function POST(req: NextRequest) {
-  const { orderedStops, travelMode, tourDate, startTime, editedFromIndex } = await req.json();
+  const {
+    orderedStops,
+    travelMode,
+    tourDate,
+    startTime,
+    editedFromIndex,
+    startLocation,
+  } = await req.json();
+
+  if (!Array.isArray(orderedStops) || orderedStops.length === 0) {
+    return NextResponse.json(
+      { error: "At least one stop is required to recalculate a schedule." },
+      { status: 400 }
+    );
+  }
+
+  const startLocationError = validateStartLocationPayload(startLocation);
+  if (startLocationError) {
+    return NextResponse.json({ error: startLocationError }, { status: 400 });
+  }
+
+  // null for a property start (the first stop IS the origin); the resolved
+  // external point otherwise, needed to recompute the "start -> first stop" leg.
+  const startPoint: PropertyPoint | null = externalStartPoint(startLocation);
 
   try {
     let currentTime = new Date(`${tourDate}T${startTime}:00`);
@@ -17,17 +44,10 @@ export async function POST(req: NextRequest) {
         arrivalTime?: string;
         travelMinutesFromPrevious?: number;
         legs?: any[];
+        pathCoordinates?: [number, number][];
       };
 
-      if (i === 0) {
-        recalculated.push({
-          ...stop,
-          arrivalTime: currentTime.toISOString(),
-          travelMinutesFromPrevious: 0,
-          legs: [],
-          pathCoordinates: [],
-        });
-      } else if (i < skipRefetchBefore && stop.arrivalTime && stop.travelMinutesFromPrevious !== undefined) {
+      if (i < skipRefetchBefore && stop.arrivalTime && stop.travelMinutesFromPrevious !== undefined) {
         // This leg is before the edited stop and unaffected - reuse its known data,
         // just replay the cumulative clock instead of calling getJourney again.
         currentTime = new Date(currentTime.getTime() + (stop.travelMinutesFromPrevious ?? 0) * 60000);
@@ -36,10 +56,21 @@ export async function POST(req: NextRequest) {
           arrivalTime: currentTime.toISOString(),
           travelMinutesFromPrevious: stop.travelMinutesFromPrevious,
           legs: stop.legs ?? [],
+          pathCoordinates: stop.pathCoordinates ?? [],
+        });
+      } else if (i === 0 && !startPoint) {
+        // Property start: this stop IS the tour origin, so it has no incoming leg.
+        recalculated.push({
+          ...stop,
+          arrivalTime: currentTime.toISOString(),
+          travelMinutesFromPrevious: 0,
+          legs: [],
+          pathCoordinates: [],
         });
       } else {
         const departAt = currentTime.toISOString();
-        const previousStop = orderedStops[i - 1] as PropertyPoint;
+        const previousStop =
+          i === 0 ? (startPoint as PropertyPoint) : (orderedStops[i - 1] as PropertyPoint);
         const journey = await getJourney(previousStop, stop, travelMode, departAt);
 
         currentTime = new Date(currentTime.getTime() + journey.totalMinutes * 60000);

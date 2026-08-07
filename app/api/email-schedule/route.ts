@@ -44,8 +44,14 @@ export async function POST(req: NextRequest) {
   const scheduleLinesHtml = stops.map((stop: any, i: number) => {
     const time = stop.arrivalTime ? formatTime(stop.arrivalTime) : "";
     const viewing = stop.viewingMinutes ? `${stop.viewingMinutes} min` : "";
-    const travel = i === 0 ? "" : `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`;
-    const mode = i === 0 ? "" : describeLegs(stop.legs);
+    // A property start's first stop has no incoming leg. An external
+    // (office/custom) start's first stop has a real one - don't drop it just
+    // because it happens to be row 0.
+    const hasIncomingTravel = i > 0 || Boolean(stop.travelMinutesFromPrevious);
+    const travel = hasIncomingTravel
+      ? `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`
+      : "";
+    const mode = hasIncomingTravel ? describeLegs(stop.legs) : "";
 
     const agentNames = (stop.recipients || [])
       .map((r: any) => r.name)

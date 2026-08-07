@@ -177,8 +177,11 @@ function buildPathSegments(
   stops: Stop[]
 ): { key: string; positions: [number, number][] }[] {
   const segments: { key: string; positions: [number, number][] }[] = [];
-  stops.forEach((stop, i) => {
-    if (i === 0 || !stop.pathCoordinates?.length) return;
+  stops.forEach((stop) => {
+    // A property start's first stop has no incoming leg, so pathCoordinates is
+    // empty and naturally skipped here. An external start's first stop carries a
+    // real "start -> first property" path that must be drawn.
+    if (!stop.pathCoordinates?.length) return;
     segments.push({
       key: stop.address,
       positions: stop.pathCoordinates,
@@ -186,6 +189,13 @@ function buildPathSegments(
   });
   return segments;
 }
+
+const startMarkerIcon = L.divIcon({
+  html: `<div style="background:#185FA5;color:#fff;border-radius:14px;padding:3px 10px;font-size:11px;font-weight:600;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.35);">Start</div>`,
+  className: "start-route-marker",
+  iconSize: [46, 22],
+  iconAnchor: [23, 11],
+});
 
 type Leg = {
   mode: string;
@@ -203,8 +213,15 @@ type Stop = {
   legs?: Leg[];
 };
 
+type ExternalStartLocation = {
+  address: string;
+  lat: number;
+  lng: number;
+};
+
 type RouteMapProps = {
   stops: Stop[];
+  startLocation?: ExternalStartLocation | null;
   onReorder?: (fromIndex: number, toIndex: number) => void;
   reorderingStopIndex?: number | null;
   reorderingMessage?: string | null;
@@ -212,6 +229,7 @@ type RouteMapProps = {
 
 export default function RouteMap({
   stops,
+  startLocation,
   onReorder,
   reorderingStopIndex,
   reorderingMessage,
@@ -402,6 +420,25 @@ export default function RouteMap({
             <Popup>{marker.name}</Popup>
           </CircleMarker>
         ))}
+        {startLocation && (
+          <Marker
+            position={[startLocation.lat, startLocation.lng]}
+            icon={startMarkerIcon}
+            zIndexOffset={2000}
+            draggable={false}
+          >
+            <Popup>
+              <div style={{ minWidth: 150 }}>
+                <p style={{ fontSize: 13, margin: "0 0 4px", fontWeight: 500 }}>
+                  {startLocation.address}
+                </p>
+                <p style={{ fontSize: 11, color: "#666", margin: 0 }}>
+                  Starting point
+                </p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
         {dropTargetIndex !== null && (
           <CircleMarker
             key={`drop-ring-${dropTargetIndex}`}

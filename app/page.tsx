@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconChevronUp, IconChevronDown } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
+import { SPACEPOINT_OFFICE, type StartLocation } from "./lib/startLocation";
 
 const RouteMap = dynamic(() => import("./components/RouteMap"), { ssr: false });
 
@@ -124,7 +125,24 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [step, setStep] = useState<"extract" | "plan" | "route">("extract");
   const [geocodedProperties, setGeocodedProperties] = useState<any[]>([]);
+  const [startLocationType, setStartLocationType] = useState<
+    "property" | "office" | "custom" | null
+  >(null);
   const [startPropertyIndex, setStartPropertyIndex] = useState<number | null>(null);
+  const [customStartQuery, setCustomStartQuery] = useState("");
+  const [customStartResolved, setCustomStartResolved] = useState<{
+    lat: number;
+    lng: number;
+    formattedAddress: string;
+    isPostcodeCentroid: boolean;
+  } | null>(null);
+  const [customStartResolvedQuery, setCustomStartResolvedQuery] = useState<
+    string | null
+  >(null);
+  const [customStartLoading, setCustomStartLoading] = useState(false);
+  const [customStartError, setCustomStartError] = useState<string | null>(null);
+  const [confirmedStartLocation, setConfirmedStartLocation] =
+    useState<StartLocation | null>(null);
   const [tourDate, setTourDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [travelMode, setTravelMode] = useState<
@@ -184,6 +202,11 @@ Spacepoint Team`);
   const recalculateRequestIdRef = useRef(0);
   const editedDurationsRef = useRef(editedDurations);
   editedDurationsRef.current = editedDurations;
+  const customStartRequestIdRef = useRef(0);
+  const customStartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const customStartAbortRef = useRef<AbortController | null>(null);
   const extractButtonState = useButtonState();
   const continueButtonState = useButtonState();
   const confirmRouteButtonState = useButtonState();
@@ -202,8 +225,27 @@ Spacepoint Team`);
       if (recalculateTimeoutRef.current) {
         clearTimeout(recalculateTimeoutRef.current);
       }
+      if (customStartDebounceRef.current) {
+        clearTimeout(customStartDebounceRef.current);
+      }
+      customStartAbortRef.current?.abort();
     };
   }, []);
+
+  // If the selected starting property is deleted (or the property list is
+  // regenerated with fewer entries, e.g. via Back -> delete -> Continue again),
+  // the stale index must never reach the optimiser.
+  useEffect(() => {
+    if (
+      startLocationType === "property" &&
+      (startPropertyIndex === null ||
+        startPropertyIndex < 0 ||
+        startPropertyIndex >= geocodedProperties.length)
+    ) {
+      setStartLocationType(null);
+      setStartPropertyIndex(null);
+    }
+  }, [geocodedProperties, startLocationType, startPropertyIndex]);
 
   useEffect(() => {
     fetch("/society-contacts.json")
@@ -612,10 +654,164 @@ Spacepoint Team`);
     }
   }
 
+  function handleStartLocationTypeChange(
+    value: "property" | "office" | "custom" | null,
+    propertyIndex?: number
+  ) {
+    setStartLocationType(value);
+    setStartPropertyIndex(value === "property" ? propertyIndex ?? null : null);
+  }
+
+  async function runCustomStartGeocode(query: string) {
+    const requestId = ++customStartRequestIdRef.current;
+    customStartAbortRef.current?.abort();
+    const controller = new AbortController();
+    customStartAbortRef.current = controller;
+
+    try {
+      const res = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: [query], purpose: "start-location" }),
+        signal: controller.signal,
+      });
+      const data = await res.json();
+
+      // A later search may have already started and finished - never let a
+      // slow, stale response overwrite a newer one.
+      if (requestId !== customStartRequestIdRef.current) return;
+
+      const result = data.results?.[0];
+      if (
+        !res.ok ||
+        !result ||
+        result.lat == null ||
+        result.lng == null ||
+        !result.verified
+      ) {
+        setCustomStartResolved(null);
+        setCustomStartResolvedQuery(null);
+        setCustomStartError(
+          "Couldn't confidently find this address - try a full postcode or a more complete address."
+        );
+        return;
+      }
+
+      setCustomStartResolved({
+        lat: result.lat,
+        lng: result.lng,
+        formattedAddress: result.resolvedFormatted || query,
+        isPostcodeCentroid: result.isPostcodeCentroid === true,
+      });
+      setCustomStartResolvedQuery(query);
+      setCustomStartError(null);
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+      if (requestId !== customStartRequestIdRef.current) return;
+      setCustomStartResolved(null);
+      setCustomStartResolvedQuery(null);
+      setCustomStartError("Failed to search for this location. Please try again.");
+    } finally {
+      if (requestId === customStartRequestIdRef.current) {
+        setCustomStartLoading(false);
+      }
+    }
+  }
+
+  function handleCustomStartQueryChange(value: string) {
+    setCustomStartQuery(value);
+    // The text changed since the last successful resolve - invalidate it
+    // immediately so a stale lat/lng can never be used to optimise a route.
+    setCustomStartResolved(null);
+    setCustomStartResolvedQuery(null);
+    setCustomStartError(null);
+
+    if (customStartDebounceRef.current) {
+      clearTimeout(customStartDebounceRef.current);
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      setCustomStartLoading(false);
+      customStartAbortRef.current?.abort();
+      return;
+    }
+
+    setCustomStartLoading(true);
+    customStartDebounceRef.current = setTimeout(() => {
+      void runCustomStartGeocode(trimmed);
+    }, 500);
+  }
+
+  function buildStartLocationPayload():
+    | { startLocation: StartLocation; error: null }
+    | { startLocation: null; error: string } {
+    if (startLocationType === "property") {
+      if (
+        startPropertyIndex === null ||
+        startPropertyIndex < 0 ||
+        startPropertyIndex >= geocodedProperties.length
+      ) {
+        return { startLocation: null, error: "a starting point" };
+      }
+      const property = geocodedProperties[startPropertyIndex];
+      if (
+        typeof property?.lat !== "number" ||
+        typeof property?.lng !== "number" ||
+        !Number.isFinite(property.lat) ||
+        !Number.isFinite(property.lng)
+      ) {
+        return { startLocation: null, error: "a starting point" };
+      }
+      return {
+        startLocation: { type: "property", propertyIndex: startPropertyIndex },
+        error: null,
+      };
+    }
+
+    if (startLocationType === "office") {
+      return {
+        startLocation: {
+          type: "office",
+          address: SPACEPOINT_OFFICE.address,
+          lat: SPACEPOINT_OFFICE.lat,
+          lng: SPACEPOINT_OFFICE.lng,
+        },
+        error: null,
+      };
+    }
+
+    if (startLocationType === "custom") {
+      const trimmedQuery = customStartQuery.trim();
+      if (
+        customStartLoading ||
+        trimmedQuery.length === 0 ||
+        !customStartResolved ||
+        customStartResolvedQuery !== trimmedQuery ||
+        !Number.isFinite(customStartResolved.lat) ||
+        !Number.isFinite(customStartResolved.lng)
+      ) {
+        return { startLocation: null, error: "a starting point" };
+      }
+      return {
+        startLocation: {
+          type: "custom",
+          address: customStartResolved.formattedAddress,
+          lat: customStartResolved.lat,
+          lng: customStartResolved.lng,
+        },
+        error: null,
+      };
+    }
+
+    return { startLocation: null, error: "a starting point" };
+  }
+
   async function handleConfirmRoute() {
     const missingFields: string[] = [];
 
-    if (startPropertyIndex === null) missingFields.push("a starting property");
+    const startLocationResult = buildStartLocationPayload();
+    if (startLocationResult.error) missingFields.push(startLocationResult.error);
     if (!tourDate) missingFields.push("a tour date");
     if (!startTime) missingFields.push("a start time");
     if (!travelMode) missingFields.push("a travel mode");
@@ -625,6 +821,8 @@ Spacepoint Team`);
       setRouteError(message);
       throw new Error(message);
     }
+
+    const startLocation = startLocationResult.startLocation as StartLocation;
 
     setRouteLoading(true);
     setRouteError(null);
@@ -678,7 +876,7 @@ Spacepoint Team`);
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           properties: propertiesForRoute,
-          startIndex: startPropertyIndex,
+          startLocation,
           viewingMinutesDefault: 15,
           tourDate,
           startTime,
@@ -690,6 +888,7 @@ Spacepoint Team`);
         setRouteError(data.error || `Route optimization failed (${res.status})`);
         throw new Error(data.error || `Route optimization failed (${res.status})`);
       }
+      setConfirmedStartLocation(startLocation);
       setRouteResult(data);
       setOptimizedTotalMinutes(data.totalTravelMinutes);
       setEditedDurations(
@@ -727,6 +926,7 @@ Spacepoint Team`);
           travelMode,
           tourDate,
           startTime,
+          startLocation: confirmedStartLocation,
           ...(editedFromIndex !== undefined ? { editedFromIndex } : {}),
         }),
       });
@@ -803,6 +1003,7 @@ Spacepoint Team`);
         travelMode,
         tourDate,
         startTime,
+        startLocation: confirmedStartLocation,
       }),
     })
       .then(async (res) => {
@@ -1618,27 +1819,107 @@ Spacepoint Team`);
               <p className="mb-4 text-sm text-red-600">{routeError}</p>
             )}
 
-            <label className="block mb-4">
-              <span className="block text-sm font-medium mb-1">Starting property</span>
+            <label className="block mb-1">
+              <span className="block text-sm font-medium mb-1">Starting point</span>
               <select
-                value={startPropertyIndex ?? ""}
-                onChange={(e) =>
-                  setStartPropertyIndex(
-                    e.target.value === "" ? null : Number(e.target.value)
-                  )
+                value={
+                  startLocationType === "property"
+                    ? startPropertyIndex !== null
+                      ? `property:${startPropertyIndex}`
+                      : ""
+                    : startLocationType ?? ""
                 }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === "") {
+                    handleStartLocationTypeChange(null);
+                  } else if (value === "office") {
+                    handleStartLocationTypeChange("office");
+                  } else if (value === "custom") {
+                    handleStartLocationTypeChange("custom");
+                  } else if (value.startsWith("property:")) {
+                    handleStartLocationTypeChange(
+                      "property",
+                      Number(value.slice("property:".length))
+                    );
+                  }
+                }}
                 className="border rounded px-2 py-2 w-full"
               >
-                <option value="">Select a starting address</option>
-                {geocodedProperties.map((p, i) => (
-                  <option key={i} value={i}>
-                    {displayAddressWithoutPostcode(
-                      p.originalAddressText || p.address
-                    )}
-                  </option>
-                ))}
+                <option value="" style={{ paddingLeft: 0 }}>
+                  Select a starting point
+                </option>
+                <option value="office" style={{ paddingLeft: 0 }}>
+                  Spacepoint office
+                </option>
+                <option value="custom" style={{ paddingLeft: 0 }}>
+                  Search address or postcode
+                </option>
+                {geocodedProperties.length > 0 && (
+                  <optgroup label="Properties" style={{ fontWeight: 600 }}>
+                    {geocodedProperties.map((p, i) => (
+                      <option
+                        key={i}
+                        value={`property:${i}`}
+                        style={{ paddingLeft: 16, fontWeight: 400 }}
+                      >
+                        {displayAddressWithoutPostcode(
+                          p.originalAddressText || p.address
+                        )}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
+
+            {startLocationType === "office" && (
+              <p className="mb-4" style={{ fontSize: 12, color: "#666" }}>
+                Starting from: {SPACEPOINT_OFFICE.address}
+              </p>
+            )}
+
+            {startLocationType === "custom" && (
+              <div className="mb-4">
+                <label className="block mb-1">
+                  <span className="block text-sm font-medium mb-1">
+                    Address or postcode
+                  </span>
+                  <input
+                    type="text"
+                    value={customStartQuery}
+                    onChange={(e) => handleCustomStartQueryChange(e.target.value)}
+                    placeholder="e.g. SW1A 1AA"
+                    className="border rounded px-2 py-2 w-full"
+                  />
+                </label>
+                {customStartLoading && (
+                  <p style={{ fontSize: 12, color: "#666", margin: "4px 0 0" }}>
+                    Searching...
+                  </p>
+                )}
+                {!customStartLoading && customStartError && (
+                  <p style={{ fontSize: 12, color: "#d85a30", margin: "4px 0 0" }}>
+                    {customStartError}
+                  </p>
+                )}
+                {!customStartLoading &&
+                  !customStartError &&
+                  customStartResolved &&
+                  customStartResolvedQuery === customStartQuery.trim() && (
+                    <>
+                      <p style={{ fontSize: 12, color: "#0f6e56", margin: "4px 0 0" }}>
+                        Starting from: {customStartResolved.formattedAddress}
+                      </p>
+                      {customStartResolved.isPostcodeCentroid && (
+                        <p style={{ fontSize: 11, color: "#999", margin: "2px 0 0" }}>
+                          Postcode area - not an exact building
+                        </p>
+                      )}
+                    </>
+                  )}
+              </div>
+            )}
 
             <label className="block mb-4">
               <span className="block text-sm font-medium mb-1">Tour date</span>
@@ -1710,7 +1991,10 @@ Spacepoint Team`);
                     .run(handleConfirmRoute)
                     .catch(() => {});
                 }}
-                disabled={confirmRouteButtonState.state === "loading"}
+                disabled={
+                  confirmRouteButtonState.state === "loading" ||
+                  (startLocationType === "custom" && customStartLoading)
+                }
                 className="bg-black text-white px-4 py-2 rounded disabled:opacity-30"
                 style={{
                   opacity: confirmRouteButtonState.state === "loading" ? 0.6 : 1,
@@ -1778,6 +2062,15 @@ Spacepoint Team`);
 
             <RouteMap
               stops={routeResult.stops}
+              startLocation={
+                confirmedStartLocation && confirmedStartLocation.type !== "property"
+                  ? {
+                      address: confirmedStartLocation.address,
+                      lat: confirmedStartLocation.lat,
+                      lng: confirmedStartLocation.lng,
+                    }
+                  : null
+              }
               onReorder={moveStop}
               reorderingMessage={reorderingMessage}
               reorderingStopIndex={reorderingStopIndex}
@@ -1794,15 +2087,46 @@ Spacepoint Team`);
                   background: "#ddd",
                 }}
               />
+              {confirmedStartLocation && confirmedStartLocation.type !== "property" && (
+                <div style={{ position: "relative", marginBottom: 20 }}>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: -28,
+                      top: 2,
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      background: "#185FA5",
+                    }}
+                  />
+                  <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
+                    {confirmedStartLocation.type === "office"
+                      ? "Starting point: Spacepoint office"
+                      : "Starting point"}
+                  </p>
+                  <p style={{ fontWeight: 500, fontSize: 14, margin: 0 }}>
+                    {confirmedStartLocation.address}
+                  </p>
+                </div>
+              )}
               {(() => {
                 const arrivals = buildArrivalTimes(routeResult.stops);
                 return routeResult.stops.map((stop: any, i: number) => {
                   const arrivalTime = formatArrivalTime(arrivals[i]);
                   const journeyTotal = stop.travelMinutesFromPrevious ?? 0;
+                  // A property start's first stop IS the origin (no incoming leg).
+                  // An external start's first stop has a real incoming leg too.
+                  const showIncomingLeg =
+                    i > 0 ||
+                    Boolean(
+                      confirmedStartLocation &&
+                        confirmedStartLocation.type !== "property"
+                    );
 
                   return (
                     <div key={i}>
-                      {i > 0 && (
+                      {showIncomingLeg && (
                         <div
                           style={{
                             position: "relative",
@@ -1985,7 +2309,7 @@ Spacepoint Team`);
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
                           {arrivalTime}
-                          {i > 0 && (
+                          {showIncomingLeg && (
                             <>
                               {" "}
                               <span style={{ color: "#999" }}>

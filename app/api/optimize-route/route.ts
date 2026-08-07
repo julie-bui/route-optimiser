@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getJourney } from "@/app/lib/journey";
 import type { JourneyResult, PropertyPoint } from "@/app/lib/journey";
+import {
+  externalStartPoint,
+  validateExternalCoordinates,
+  validateStartLocationPayload,
+} from "@/app/lib/startLocation";
 
 function solveRoute(matrix: number[][], startIndex: number): number[] {
   const n = matrix.length;
@@ -58,21 +63,61 @@ function solveRoute(matrix: number[][], startIndex: number): number[] {
 }
 
 export async function POST(req: NextRequest) {
+  const body = await req.json();
   const {
     properties,
-    startIndex,
+    startLocation,
     viewingMinutesDefault,
     travelMode,
     tourDate,
     startTime,
-  } = await req.json();
+  } = body;
+
+  if (!Array.isArray(properties) || properties.length === 0) {
+    return NextResponse.json(
+      { error: "At least one property is required to plan a route." },
+      { status: 400 }
+    );
+  }
+
+  const startLocationError = validateStartLocationPayload(
+    startLocation,
+    properties.length
+  );
+  if (startLocationError) {
+    return NextResponse.json({ error: startLocationError }, { status: 400 });
+  }
+
+  for (const property of properties) {
+    const coordError = validateExternalCoordinates(property?.lat, property?.lng);
+    if (coordError) {
+      return NextResponse.json(
+        {
+          error: `Property "${property?.address ?? "unknown"}" has invalid coordinates.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const mode = travelMode || "publicTransport";
 
-  const points: PropertyPoint[] = properties.map((p: any) => ({
+  const propertyPoints: PropertyPoint[] = properties.map((p: any) => ({
     address: p.address,
     lat: p.lat,
     lng: p.lng,
   }));
+
+  // An external start (office/custom) is optimised as a locked point at index 0 of
+  // an extended point list, so the "start -> first property" leg genuinely factors
+  // into route order rather than being bolted on afterwards. A property start keeps
+  // the original single-array behaviour untouched.
+  const startPoint = externalStartPoint(startLocation);
+  const hasExternalStart = startPoint !== null;
+  const points: PropertyPoint[] = hasExternalStart
+    ? [startPoint, ...propertyPoints]
+    : propertyPoints;
+  const lockedStartIndex = hasExternalStart ? 0 : startLocation.propertyIndex;
 
   try {
     const n = points.length;
@@ -83,10 +128,12 @@ export async function POST(req: NextRequest) {
     );
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
-        if (i !== j) {
-          const journey = await getJourney(points[i], points[j], mode, departAt);
-          matrix[i][j] = journey.totalMinutes;
-        }
+        if (i === j) continue;
+        // Nothing ever routes back to an external start - it is locked at position 0
+        // and solveRoute never revisits it, so skip the wasted journey lookup.
+        if (hasExternalStart && j === 0) continue;
+        const journey = await getJourney(points[i], points[j], mode, departAt);
+        matrix[i][j] = journey.totalMinutes;
       }
     }
 
@@ -104,7 +151,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const order = solveRoute(matrix, startIndex);
+    const order = solveRoute(matrix, lockedStartIndex);
 
     const legDetailsByStep: (JourneyResult | null)[] = [null];
     for (let i = 1; i < order.length; i++) {
@@ -117,14 +164,29 @@ export async function POST(req: NextRequest) {
       legDetailsByStep.push(journey);
     }
 
+    // `order` indexes into `points`, which may have the external start prepended at
+    // index 0. Drop that entry from the output - it must never appear as a viewing
+    // stop - while keeping the leg *into* the first property (computed above).
+    const propertyOrder = hasExternalStart ? order.slice(1) : order;
+    const legForPropertyStep = hasExternalStart
+      ? legDetailsByStep.slice(1)
+      : legDetailsByStep;
+    const toPropertyIndex = (pointIndex: number) =>
+      hasExternalStart ? pointIndex - 1 : pointIndex;
+
     let currentTime = new Date(departAt);
-    const stops = order.map((idx: number, i: number) => {
-      const journey = legDetailsByStep[i];
-      const viewingMinutes = properties[idx].viewingMinutes ?? viewingMinutesDefault ?? 15;
+    const stops = propertyOrder.map((pointIdx: number, i: number) => {
+      const propertyIdx = toPropertyIndex(pointIdx);
+      const journey = legForPropertyStep[i];
+      const viewingMinutes =
+        properties[propertyIdx].viewingMinutes ?? viewingMinutesDefault ?? 15;
       const isUnreachable =
         (journey?.totalMinutes ?? 0) >= UNREACHABLE_PENALTY_MINUTES;
+      // A property start has no incoming leg for its first stop (it IS the origin).
+      // An external start means every property, including the first, is arrived at.
+      const hasIncomingLeg = hasExternalStart ? true : i > 0;
 
-      if (i > 0 && journey && !isUnreachable) {
+      if (hasIncomingLeg && journey && !isUnreachable) {
         currentTime = new Date(
           currentTime.getTime() + journey.totalMinutes * 60000
         );
@@ -137,21 +199,26 @@ export async function POST(req: NextRequest) {
       );
 
       return {
-        ...properties[idx],
-        travelMinutesFromPrevious: isUnreachable
-          ? null
-          : (journey?.totalMinutes ?? 0),
-        legs: isUnreachable ? [] : (journey?.legs ?? []),
-        unreachable: isUnreachable,
-        unreachableReason: isUnreachable
-          ? "No route found for this travel mode between these two stops - try switching travel mode."
-          : null,
+        ...properties[propertyIdx],
+        travelMinutesFromPrevious: !hasIncomingLeg
+          ? 0
+          : isUnreachable
+            ? null
+            : (journey?.totalMinutes ?? 0),
+        legs: !hasIncomingLeg || isUnreachable ? [] : (journey?.legs ?? []),
+        unreachable: hasIncomingLeg && isUnreachable,
+        unreachableReason:
+          hasIncomingLeg && isUnreachable
+            ? "No route found for this travel mode between these two stops - try switching travel mode."
+            : null,
         estimatedEBikeMinutes:
-          mode === "cycling" && journey && !isUnreachable
+          mode === "cycling" && hasIncomingLeg && journey && !isUnreachable
             ? Math.round(journey.totalMinutes * 0.8)
             : null,
-        estimatedTaxiNote: journey?.estimatedTaxiNote ?? null,
-        pathCoordinates: journey?.pathCoordinates ?? [],
+        estimatedTaxiNote: hasIncomingLeg
+          ? journey?.estimatedTaxiNote ?? null
+          : null,
+        pathCoordinates: !hasIncomingLeg ? [] : (journey?.pathCoordinates ?? []),
         viewingMinutes,
         arrivalTime,
       };

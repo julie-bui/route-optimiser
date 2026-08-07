@@ -63,16 +63,13 @@ export async function POST(req: NextRequest) {
     const viewingValue = new Date(1899, 11, 30, 0, viewingMinutes);
 
     const travelMinutes = stop.travelMinutesFromPrevious ?? 0;
-    const travelValue =
-      i === 0
-        ? null
-        : new Date(
-            1899,
-            11,
-            30,
-            0,
-            roundUpMinutesToFive(travelMinutes)
-          );
+    // A property start's first stop has no incoming leg (travelMinutesFromPrevious
+    // is 0). An external (office/custom) start's first stop has a real one that
+    // must not be silently dropped just because it happens to be row 0.
+    const hasIncomingTravel = i > 0 || Boolean(stop.travelMinutesFromPrevious);
+    const travelValue = hasIncomingTravel
+      ? new Date(1899, 11, 30, 0, roundUpMinutesToFive(travelMinutes))
+      : null;
 
     console.log(`DEBUG stop "${stop.address}" recipients (${(stop.recipients || []).length}):`, JSON.stringify(stop.recipients));
 
@@ -93,7 +90,7 @@ export async function POST(req: NextRequest) {
       agentPhones,
       viewingValue,
       travelValue,
-      i === 0 ? "" : describeLegs(stop.legs),
+      hasIncomingTravel ? describeLegs(stop.legs) : "",
     ]);
 
     row.getCell(2).numFmt = "h:mm:ss";
