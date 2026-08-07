@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       results.push({
         address: stop.address,
         status: "skipped",
-        reason: "No agent email available",
+        reason: "No viewing email sent - no agent email was provided",
         sentTo: null,
       });
       continue;

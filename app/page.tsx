@@ -6,6 +6,7 @@ import { IconWalk, IconBus, IconTrain, IconBike, IconCar, IconChevronUp, IconChe
 import dynamic from "next/dynamic";
 import { formatRoundedTime, roundUpMinutesToFive } from "./lib/timeFormat";
 import { SPACEPOINT_OFFICE, type StartLocation } from "./lib/startLocation";
+import { isCompleteUkPostcode } from "./lib/geocode";
 
 const RouteMap = dynamic(() => import("./components/RouteMap"), { ssr: false });
 
@@ -20,8 +21,11 @@ type Agency = {
   contacts: Contact[];
 };
 
+type PropertySource = "uploaded" | "manual";
+
 type Property = {
   sourcePdfName: string | null;
+  sourceType: PropertySource;
   address: string | null;
   originalAddressText?: string | null;
   agencies: Agency[];
@@ -36,6 +40,16 @@ type Property = {
   needsReview: boolean;
 };
 
+// Only uploaded/extracted properties require a resolved agent email before the
+// user can continue - manually pasted addresses may proceed without one. Kept
+// central so the rule isn't duplicated/scattered across validation and UI code.
+// Defaults to "requires email" for any property missing an explicit sourceType,
+// which is the safe direction (never accidentally makes an uploaded property's
+// email optional).
+function requiresAgentEmail(property: { sourceType?: PropertySource }): boolean {
+  return property.sourceType !== "manual";
+}
+
 function hasCompleteUKPostcodeClient(address: string | null): boolean {
   if (!address) return false;
   const fullPostcodeRegex = /[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i;
@@ -45,6 +59,18 @@ function hasCompleteUKPostcodeClient(address: string | null): boolean {
 function displayAddressWithoutPostcode(address: string): string {
   return address.replace(/,?\s*[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\s*(,\s*(UK|United Kingdom))?\s*$/i, "").trim();
 }
+
+// Rejects the custom starting-point search when the ENTIRE input is nothing but
+// a UK postcode (a postcode can cover many buildings, which is too imprecise for
+// a route origin). Reuses the exact same anchored postcode check the shared
+// geocoder already uses, so "1 Finsbury Market, EC2A 2BN" (a full address that
+// happens to contain a postcode) is never mistaken for postcode-only input.
+function isPostcodeOnly(value: string): boolean {
+  return isCompleteUkPostcode(value);
+}
+
+const CUSTOM_START_POSTCODE_ONLY_WARNING =
+  "Please enter a full address rather than only a postcode. A postcode can cover multiple buildings and may give an inaccurate starting point.";
 
 function generateFiveMinuteIntervals(): string[] {
   const times: string[] = [];
@@ -65,8 +91,9 @@ function isValidEmail(email: string): boolean {
 }
 
 function needsPropertyReview(property: Property): boolean {
-  const hasValidRecipient =
-    property.agencies.length > 0
+  const hasValidRecipient = !requiresAgentEmail(property)
+    ? true
+    : property.agencies.length > 0
       ? property.agencies.every((_, agencyIndex) =>
           isValidEmail(property.selectedEmails?.[agencyIndex] || "")
         )
@@ -81,8 +108,8 @@ function needsPropertyReview(property: Property): boolean {
 
 function recomputeManualNeedsReview(property: any): boolean {
   const hasValidRecipient =
-    property.manualRecipientEmail &&
-    isValidEmail(property.manualRecipientEmail);
+    !requiresAgentEmail(property) ||
+    (property.manualRecipientEmail && isValidEmail(property.manualRecipientEmail));
   return !property.address || Boolean(property.lowConfidenceMatch) || !hasValidRecipient;
 }
 
@@ -134,7 +161,6 @@ export default function Home() {
     lat: number;
     lng: number;
     formattedAddress: string;
-    isPostcodeCentroid: boolean;
   } | null>(null);
   const [customStartResolvedQuery, setCustomStartResolvedQuery] = useState<
     string | null
@@ -281,6 +307,7 @@ Spacepoint Team`);
 
     const newProperties = lines.map((address) => ({
       sourcePdfName: null,
+      sourceType: "manual" as const,
       address,
       agencies: [],
       selectedEmails: {},
@@ -456,6 +483,7 @@ Spacepoint Team`);
       const initialized = data.results.map((property: any) => {
         const initializedProperty: Property = {
           ...property,
+          sourceType: "uploaded",
           agencies: property.agencies || [],
           selectedEmails: Object.fromEntries(
             (property.agencies || []).map((agency: any, index: number) => [
@@ -692,7 +720,7 @@ Spacepoint Team`);
         setCustomStartResolved(null);
         setCustomStartResolvedQuery(null);
         setCustomStartError(
-          "Couldn't confidently find this address - try a full postcode or a more complete address."
+          "Couldn't confidently find this address - try a more complete address."
         );
         return;
       }
@@ -701,7 +729,6 @@ Spacepoint Team`);
         lat: result.lat,
         lng: result.lng,
         formattedAddress: result.resolvedFormatted || query,
-        isPostcodeCentroid: result.isPostcodeCentroid === true,
       });
       setCustomStartResolvedQuery(query);
       setCustomStartError(null);
@@ -734,6 +761,16 @@ Spacepoint Team`);
     if (trimmed.length === 0) {
       setCustomStartLoading(false);
       customStartAbortRef.current?.abort();
+      return;
+    }
+
+    // Postcode-only input is rejected outright for a route origin - it's never
+    // sent to the geocoder at all, so no stale/approximate coordinates can ever
+    // be produced for it.
+    if (isPostcodeOnly(trimmed)) {
+      setCustomStartLoading(false);
+      customStartAbortRef.current?.abort();
+      setCustomStartError(CUSTOM_START_POSTCODE_ONLY_WARNING);
       return;
     }
 
@@ -786,6 +823,7 @@ Spacepoint Team`);
       if (
         customStartLoading ||
         trimmedQuery.length === 0 ||
+        isPostcodeOnly(trimmedQuery) ||
         !customStartResolved ||
         customStartResolvedQuery !== trimmedQuery ||
         !Number.isFinite(customStartResolved.lat) ||
@@ -1149,9 +1187,13 @@ Spacepoint Team`);
       return;
     }
 
+    // Only properties that actually require an agent email (i.e. not manually
+    // pasted addresses) block sending when they have none - a manual property
+    // with no recipient is valid and simply gets skipped when emails go out.
     const invalidAgentEmails = routeResult.stops.filter(
       (stop: any) =>
-        !stop.recipientEmails || stop.recipientEmails.length === 0
+        requiresAgentEmail(stop) &&
+        (!stop.recipientEmails || stop.recipientEmails.length === 0)
     );
     if (invalidAgentEmails.length > 0) {
       setEmailResults(
@@ -1363,7 +1405,9 @@ Spacepoint Team`);
                 </tr>
               </thead>
               <tbody>
-                {properties.map((p, i) => (
+                {properties.map((p, i) => {
+                  const requiresEmail = requiresAgentEmail(p);
+                  return (
                   <tr key={i} className={p.needsReview ? "bg-red-50" : ""}>
                     <td className="p-2 text-sm" style={{ verticalAlign: "top" }}>
                       <label style={{ fontSize: 11, color: "transparent", display: "block", marginBottom: 4 }}>
@@ -1594,7 +1638,7 @@ Spacepoint Team`);
                               marginBottom: 4,
                             }}
                           >
-                            Agent Email
+                            {requiresEmail ? "Agent Email" : "Agent Email (optional)"}
                           </label>
                           <input
                             type="text"
@@ -1718,7 +1762,9 @@ Spacepoint Team`);
                             >
                               {p.lowConfidenceMatch
                                 ? "This address couldn't be matched confidently - please check it or add a postcode"
-                                : "Select or enter a valid recipient email"}
+                                : requiresEmail
+                                  ? "Select or enter a valid recipient email"
+                                  : "Address is missing"}
                             </div>
                           )}
                           <input
@@ -1757,7 +1803,8 @@ Spacepoint Team`);
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -1853,7 +1900,7 @@ Spacepoint Team`);
                   Spacepoint office
                 </option>
                 <option value="custom" style={{ paddingLeft: 0 }}>
-                  Search address or postcode
+                  Search starting address
                 </option>
                 {geocodedProperties.length > 0 && (
                   <optgroup label="Properties" style={{ fontWeight: 600 }}>
@@ -1883,13 +1930,13 @@ Spacepoint Team`);
               <div className="mb-4">
                 <label className="block mb-1">
                   <span className="block text-sm font-medium mb-1">
-                    Address or postcode
+                    Starting address
                   </span>
                   <input
                     type="text"
                     value={customStartQuery}
                     onChange={(e) => handleCustomStartQueryChange(e.target.value)}
-                    placeholder="e.g. SW1A 1AA"
+                    placeholder="Enter a starting address"
                     className="border rounded px-2 py-2 w-full"
                   />
                 </label>
@@ -1907,16 +1954,9 @@ Spacepoint Team`);
                   !customStartError &&
                   customStartResolved &&
                   customStartResolvedQuery === customStartQuery.trim() && (
-                    <>
-                      <p style={{ fontSize: 12, color: "#0f6e56", margin: "4px 0 0" }}>
-                        Starting from: {customStartResolved.formattedAddress}
-                      </p>
-                      {customStartResolved.isPostcodeCentroid && (
-                        <p style={{ fontSize: 11, color: "#999", margin: "2px 0 0" }}>
-                          Postcode area - not an exact building
-                        </p>
-                      )}
-                    </>
+                    <p style={{ fontSize: 12, color: "#0f6e56", margin: "4px 0 0" }}>
+                      Starting from: {customStartResolved.formattedAddress}
+                    </p>
                   )}
               </div>
             )}

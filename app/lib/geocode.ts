@@ -29,7 +29,7 @@ function normalizePostcode(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, "");
 }
 
-function isCompleteUkPostcode(value: string): boolean {
+export function isCompleteUkPostcode(value: string): boolean {
   return COMPLETE_UK_POSTCODE_REGEX.test(normalizePostcode(value));
 }
 
