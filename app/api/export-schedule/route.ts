@@ -63,11 +63,12 @@ export async function POST(req: NextRequest) {
     const viewingValue = new Date(1899, 11, 30, 0, viewingMinutes);
 
     const travelMinutes = stop.travelMinutesFromPrevious ?? 0;
-    // stops[0] is always the start of the actual tour and therefore has no
-    // incoming travel, regardless of the selected starting point - so only rows
-    // after the first ever display travel time/mode.
-    const hasIncomingTravel = i > 0;
-    const travelValue = hasIncomingTravel
+    // stops[0] is always the start of the actual tour, so its travel-time cell
+    // is blank/uncounted even when an external start's route into it is shown
+    // via the Travel Mode column below - only the DURATION is excluded, not
+    // the route itself.
+    const hasCountedTravelTime = i > 0;
+    const travelValue = hasCountedTravelTime
       ? new Date(1899, 11, 30, 0, roundUpMinutesToFive(travelMinutes))
       : null;
 
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
       agentPhones,
       viewingValue,
       travelValue,
-      hasIncomingTravel ? describeLegs(stop.legs) : "",
+      describeLegs(stop.legs),
     ]);
 
     row.getCell(2).numFmt = "h:mm:ss";

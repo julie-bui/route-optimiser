@@ -111,9 +111,11 @@ export async function POST(req: NextRequest) {
   // An external start (office/custom) is optimised as a locked point at index 0 of
   // an extended point list, so the "start -> first property" leg genuinely factors
   // into route ORDER rather than being bolted on afterwards. A property start keeps
-  // the original single-array behaviour untouched. Either way, that leg never
-  // appears in the returned SCHEDULE: stops[0] is always the start of the actual
-  // tour (see hasIncomingLeg below), so it never has an incoming travel leg.
+  // the original single-array behaviour untouched. Either way, the tour SCHEDULE
+  // always begins at Property 1 (see countsTowardSchedule below): an external
+  // start's route into it is still fetched and returned for display (legs,
+  // pathCoordinates, mode), but its duration never advances the clock or counts
+  // toward totals.
   const startPoint = externalStartPoint(startLocation);
   const hasExternalStart = startPoint !== null;
   const points: PropertyPoint[] = hasExternalStart
@@ -155,16 +157,12 @@ export async function POST(req: NextRequest) {
 
     const order = solveRoute(matrix, lockedStartIndex);
 
+    // Full journey detail (legs, pathCoordinates, mode) for every step along the
+    // chosen order, INCLUDING the external start -> first property leg (i === 1
+    // when hasExternalStart) - that leg is still needed for the map/route display
+    // even though its duration is excluded from the schedule further down.
     const legDetailsByStep: (JourneyResult | null)[] = [null];
     for (let i = 1; i < order.length; i++) {
-      // The external start -> first property leg (i === 1 when hasExternalStart)
-      // only ever mattered for choosing route order, which is already baked into
-      // `order` via the matrix above. It must never appear in the schedule, so
-      // skip fetching its full journey detail entirely.
-      if (hasExternalStart && i === 1) {
-        legDetailsByStep.push(null);
-        continue;
-      }
       const journey = await getJourney(
         points[order[i - 1]],
         points[order[i]],
@@ -176,8 +174,8 @@ export async function POST(req: NextRequest) {
 
     // `order` indexes into `points`, which may have the external start prepended at
     // index 0. Drop that entry from the output - it must never appear as a viewing
-    // stop, and its leg into the first property must never appear in the schedule
-    // either (see legDetailsByStep above and hasIncomingLeg below).
+    // stop - while keeping the leg *into* the first property (computed above) for
+    // display purposes.
     const propertyOrder = hasExternalStart ? order.slice(1) : order;
     const legForPropertyStep = hasExternalStart
       ? legDetailsByStep.slice(1)
@@ -193,13 +191,21 @@ export async function POST(req: NextRequest) {
         properties[propertyIdx].viewingMinutes ?? viewingMinutesDefault ?? 15;
       const isUnreachable =
         (journey?.totalMinutes ?? 0) >= UNREACHABLE_PENALTY_MINUTES;
-      // stops[0] is always the start of the actual tour and therefore has no
-      // incoming tour travel leg, regardless of whether the selected starting
-      // point was the office, a custom address, or a property. Any external
-      // start -> first property leg only ever influenced route ORDER above.
-      const hasIncomingLeg = i > 0;
 
-      if (hasIncomingLeg && journey && !isUnreachable) {
+      // Two independent concepts for stop 0:
+      //   hasIncomingRoute     - is there an actual journey INTO this stop to
+      //                          show on the map/route details (legs, path,
+      //                          mode)? A property start has none. An external
+      //                          start (office/custom) has a real one.
+      //   countsTowardSchedule - should that journey's duration advance the
+      //                          tour clock and be summed into
+      //                          totalTravelMinutes? Only true for i > 0 - the
+      //                          tour schedule always begins at Property 1,
+      //                          regardless of where the optimiser started.
+      const hasIncomingRoute = hasExternalStart ? true : i > 0;
+      const countsTowardSchedule = i > 0;
+
+      if (countsTowardSchedule && journey && !isUnreachable) {
         currentTime = new Date(
           currentTime.getTime() + journey.totalMinutes * 60000
         );
@@ -213,25 +219,36 @@ export async function POST(req: NextRequest) {
 
       return {
         ...properties[propertyIdx],
-        travelMinutesFromPrevious: !hasIncomingLeg
+        // Counted schedule travel time - always 0 for stop 0, even when an
+        // external start's real route into it is retained below for display.
+        travelMinutesFromPrevious: !countsTowardSchedule
           ? 0
           : isUnreachable
             ? null
             : (journey?.totalMinutes ?? 0),
-        legs: !hasIncomingLeg || isUnreachable ? [] : (journey?.legs ?? []),
-        unreachable: hasIncomingLeg && isUnreachable,
+        // Raw duration of the actual incoming route, for display only. Equal
+        // to travelMinutesFromPrevious for every stop except stop 0 with an
+        // external start, where it carries the real (schedule-excluded)
+        // duration so the map/route details can still show it.
+        routeMinutesFromPrevious: !hasIncomingRoute
+          ? null
+          : isUnreachable
+            ? null
+            : (journey?.totalMinutes ?? 0),
+        legs: !hasIncomingRoute || isUnreachable ? [] : (journey?.legs ?? []),
+        unreachable: hasIncomingRoute && isUnreachable,
         unreachableReason:
-          hasIncomingLeg && isUnreachable
+          hasIncomingRoute && isUnreachable
             ? "No route found for this travel mode between these two stops - try switching travel mode."
             : null,
         estimatedEBikeMinutes:
-          mode === "cycling" && hasIncomingLeg && journey && !isUnreachable
+          mode === "cycling" && hasIncomingRoute && journey && !isUnreachable
             ? Math.round(journey.totalMinutes * 0.8)
             : null,
-        estimatedTaxiNote: hasIncomingLeg
+        estimatedTaxiNote: hasIncomingRoute
           ? journey?.estimatedTaxiNote ?? null
           : null,
-        pathCoordinates: !hasIncomingLeg ? [] : (journey?.pathCoordinates ?? []),
+        pathCoordinates: !hasIncomingRoute ? [] : (journey?.pathCoordinates ?? []),
         viewingMinutes,
         arrivalTime,
       };

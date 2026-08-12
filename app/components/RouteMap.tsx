@@ -178,9 +178,10 @@ function buildPathSegments(
 ): { key: string; positions: [number, number][] }[] {
   const segments: { key: string; positions: [number, number][] }[] = [];
   stops.forEach((stop) => {
-    // stops[0] is always the start of the actual tour and therefore has no
-    // incoming path, regardless of the selected starting point - so
-    // pathCoordinates is empty for it and naturally skipped here.
+    // A property start's stop 0 has no incoming route, so pathCoordinates is
+    // empty and naturally skipped here. An external (office/custom) start's
+    // stop 0 DOES carry a real "start -> Property 1" path to draw, even though
+    // that leg's duration is excluded from the tour schedule/totals.
     if (!stop.pathCoordinates?.length) return;
     segments.push({
       key: stop.address,

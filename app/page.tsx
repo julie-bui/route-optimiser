@@ -2484,16 +2484,30 @@ Spacepoint Team`);
                 const arrivals = buildArrivalTimes(routeResult.stops);
                 return routeResult.stops.map((stop: any, i: number) => {
                   const arrivalTime = formatArrivalTime(arrivals[i]);
-                  const journeyTotal = stop.travelMinutesFromPrevious ?? 0;
-                  // stops[0] is always the start of the actual tour and
-                  // therefore has no incoming leg, regardless of the selected
-                  // starting point - so only stops after the first ever show
-                  // an incoming travel card.
-                  const showIncomingLeg = i > 0;
+                  // routeMinutesFromPrevious carries the real duration of the
+                  // incoming route even when it isn't counted (stop 0 with an
+                  // external start); it equals travelMinutesFromPrevious for
+                  // every other stop.
+                  const journeyTotal =
+                    stop.routeMinutesFromPrevious ?? stop.travelMinutesFromPrevious ?? 0;
+                  // Two independent concepts for stop 0 with an external start:
+                  //   hasIncomingRoute    - is there an actual route into this
+                  //                         stop to show (legs/path/mode)?
+                  //   isCountedTravelTime - does that route's duration count
+                  //                         toward the tour schedule/totals?
+                  // A property start has neither for stop 0. An external start
+                  // has a route (hasIncomingRoute) but it's never counted.
+                  const hasIncomingRoute =
+                    i > 0 ||
+                    Boolean(
+                      confirmedStartLocation &&
+                        confirmedStartLocation.type !== "property"
+                    );
+                  const isCountedTravelTime = i > 0;
 
                   return (
                     <div key={i}>
-                      {showIncomingLeg && (
+                      {hasIncomingRoute && (
                         <div
                           style={{
                             position: "relative",
@@ -2514,6 +2528,12 @@ Spacepoint Team`);
                           >
                             {Math.round(journeyTotal)} min total (
                             {roundUpMinutesToFive(journeyTotal)} min rounded up)
+                            {!isCountedTravelTime && (
+                              <span style={{ fontWeight: 400, color: "#999" }}>
+                                {" "}
+                                - not counted in tour schedule
+                              </span>
+                            )}
                           </p>
                           {stop.unreachable ? (
                             <p style={{ fontSize: 12, color: "#d85a30", margin: 0 }}>
@@ -2676,7 +2696,7 @@ Spacepoint Team`);
                         </div>
                         <p style={{ fontSize: 13, color: "#666", margin: "0 0 2px" }}>
                           {arrivalTime}
-                          {showIncomingLeg && (
+                          {hasIncomingRoute && (
                             <>
                               {" "}
                               <span style={{ color: "#999" }}>

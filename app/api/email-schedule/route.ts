@@ -44,14 +44,15 @@ export async function POST(req: NextRequest) {
   const scheduleLinesHtml = stops.map((stop: any, i: number) => {
     const time = stop.arrivalTime ? formatTime(stop.arrivalTime) : "";
     const viewing = stop.viewingMinutes ? `${stop.viewingMinutes} min` : "";
-    // stops[0] is always the start of the actual tour and therefore has no
-    // incoming travel, regardless of the selected starting point - so only
-    // stops after the first ever display travel time/mode.
-    const hasIncomingTravel = i > 0;
-    const travel = hasIncomingTravel
+    // stops[0] is always the start of the actual tour, so its travel time is
+    // blank/uncounted even when an external start's route into it is shown via
+    // the travel mode line below - only the DURATION is excluded, not the
+    // route itself.
+    const hasCountedTravelTime = i > 0;
+    const travel = hasCountedTravelTime
       ? `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`
       : "";
-    const mode = hasIncomingTravel ? describeLegs(stop.legs) : "";
+    const mode = describeLegs(stop.legs);
 
     const agentNames = (stop.recipients || [])
       .map((r: any) => r.name)
