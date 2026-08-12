@@ -2485,14 +2485,11 @@ Spacepoint Team`);
                 return routeResult.stops.map((stop: any, i: number) => {
                   const arrivalTime = formatArrivalTime(arrivals[i]);
                   const journeyTotal = stop.travelMinutesFromPrevious ?? 0;
-                  // A property start's first stop IS the origin (no incoming leg).
-                  // An external start's first stop has a real incoming leg too.
-                  const showIncomingLeg =
-                    i > 0 ||
-                    Boolean(
-                      confirmedStartLocation &&
-                        confirmedStartLocation.type !== "property"
-                    );
+                  // stops[0] is always the start of the actual tour and
+                  // therefore has no incoming leg, regardless of the selected
+                  // starting point - so only stops after the first ever show
+                  // an incoming travel card.
+                  const showIncomingLeg = i > 0;
 
                   return (
                     <div key={i}>

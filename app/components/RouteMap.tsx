@@ -178,9 +178,9 @@ function buildPathSegments(
 ): { key: string; positions: [number, number][] }[] {
   const segments: { key: string; positions: [number, number][] }[] = [];
   stops.forEach((stop) => {
-    // A property start's first stop has no incoming leg, so pathCoordinates is
-    // empty and naturally skipped here. An external start's first stop carries a
-    // real "start -> first property" path that must be drawn.
+    // stops[0] is always the start of the actual tour and therefore has no
+    // incoming path, regardless of the selected starting point - so
+    // pathCoordinates is empty for it and naturally skipped here.
     if (!stop.pathCoordinates?.length) return;
     segments.push({
       key: stop.address,

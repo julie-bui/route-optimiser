@@ -63,10 +63,10 @@ export async function POST(req: NextRequest) {
     const viewingValue = new Date(1899, 11, 30, 0, viewingMinutes);
 
     const travelMinutes = stop.travelMinutesFromPrevious ?? 0;
-    // A property start's first stop has no incoming leg (travelMinutesFromPrevious
-    // is 0). An external (office/custom) start's first stop has a real one that
-    // must not be silently dropped just because it happens to be row 0.
-    const hasIncomingTravel = i > 0 || Boolean(stop.travelMinutesFromPrevious);
+    // stops[0] is always the start of the actual tour and therefore has no
+    // incoming travel, regardless of the selected starting point - so only rows
+    // after the first ever display travel time/mode.
+    const hasIncomingTravel = i > 0;
     const travelValue = hasIncomingTravel
       ? new Date(1899, 11, 30, 0, roundUpMinutesToFive(travelMinutes))
       : null;

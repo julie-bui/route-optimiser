@@ -44,10 +44,10 @@ export async function POST(req: NextRequest) {
   const scheduleLinesHtml = stops.map((stop: any, i: number) => {
     const time = stop.arrivalTime ? formatTime(stop.arrivalTime) : "";
     const viewing = stop.viewingMinutes ? `${stop.viewingMinutes} min` : "";
-    // A property start's first stop has no incoming leg. An external
-    // (office/custom) start's first stop has a real one - don't drop it just
-    // because it happens to be row 0.
-    const hasIncomingTravel = i > 0 || Boolean(stop.travelMinutesFromPrevious);
+    // stops[0] is always the start of the actual tour and therefore has no
+    // incoming travel, regardless of the selected starting point - so only
+    // stops after the first ever display travel time/mode.
+    const hasIncomingTravel = i > 0;
     const travel = hasIncomingTravel
       ? `${roundUpMinutesToFive(stop.travelMinutesFromPrevious ?? 0)} min`
       : "";

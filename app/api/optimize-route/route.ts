@@ -110,8 +110,10 @@ export async function POST(req: NextRequest) {
 
   // An external start (office/custom) is optimised as a locked point at index 0 of
   // an extended point list, so the "start -> first property" leg genuinely factors
-  // into route order rather than being bolted on afterwards. A property start keeps
-  // the original single-array behaviour untouched.
+  // into route ORDER rather than being bolted on afterwards. A property start keeps
+  // the original single-array behaviour untouched. Either way, that leg never
+  // appears in the returned SCHEDULE: stops[0] is always the start of the actual
+  // tour (see hasIncomingLeg below), so it never has an incoming travel leg.
   const startPoint = externalStartPoint(startLocation);
   const hasExternalStart = startPoint !== null;
   const points: PropertyPoint[] = hasExternalStart
@@ -155,6 +157,14 @@ export async function POST(req: NextRequest) {
 
     const legDetailsByStep: (JourneyResult | null)[] = [null];
     for (let i = 1; i < order.length; i++) {
+      // The external start -> first property leg (i === 1 when hasExternalStart)
+      // only ever mattered for choosing route order, which is already baked into
+      // `order` via the matrix above. It must never appear in the schedule, so
+      // skip fetching its full journey detail entirely.
+      if (hasExternalStart && i === 1) {
+        legDetailsByStep.push(null);
+        continue;
+      }
       const journey = await getJourney(
         points[order[i - 1]],
         points[order[i]],
@@ -166,7 +176,8 @@ export async function POST(req: NextRequest) {
 
     // `order` indexes into `points`, which may have the external start prepended at
     // index 0. Drop that entry from the output - it must never appear as a viewing
-    // stop - while keeping the leg *into* the first property (computed above).
+    // stop, and its leg into the first property must never appear in the schedule
+    // either (see legDetailsByStep above and hasIncomingLeg below).
     const propertyOrder = hasExternalStart ? order.slice(1) : order;
     const legForPropertyStep = hasExternalStart
       ? legDetailsByStep.slice(1)
@@ -182,9 +193,11 @@ export async function POST(req: NextRequest) {
         properties[propertyIdx].viewingMinutes ?? viewingMinutesDefault ?? 15;
       const isUnreachable =
         (journey?.totalMinutes ?? 0) >= UNREACHABLE_PENALTY_MINUTES;
-      // A property start has no incoming leg for its first stop (it IS the origin).
-      // An external start means every property, including the first, is arrived at.
-      const hasIncomingLeg = hasExternalStart ? true : i > 0;
+      // stops[0] is always the start of the actual tour and therefore has no
+      // incoming tour travel leg, regardless of whether the selected starting
+      // point was the office, a custom address, or a property. Any external
+      // start -> first property leg only ever influenced route ORDER above.
+      const hasIncomingLeg = i > 0;
 
       if (hasIncomingLeg && journey && !isUnreachable) {
         currentTime = new Date(
